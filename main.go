@@ -56,7 +56,7 @@ func main() {
 
 	err := cmd.Run()
 	if err != nil {
-		fmt.Printf("\n❌ Ошибка: %v\n", err)
+		fmt.Printf("\n Ошибка: %v\n", err)
 		return
 	}
 
