@@ -178,7 +178,7 @@ func handleInfo(w http.ResponseWriter, r *http.Request) {
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		writeErr(w, http.StatusBadGateway, "Не удалось получить инфо: "+tail(stderr.String()))
+		writeErr(w, http.StatusBadGateway, augmentCookieError("Не удалось получить инфо: "+tail(stderr.String())))
 		return
 	}
 
@@ -211,7 +211,9 @@ func buildQualities(formats []ytFormat) []qualityOption {
 	seen := map[int]bool{}
 	var heights []int
 	for _, f := range formats {
-		if f.Height > 0 && f.Vcodec != "" && f.Vcodec != "none" && !seen[f.Height] {
+		// Выше 1080p YouTube отдаёт только VP9/AV1 (несовместимо с QuickTime и др.),
+		// поэтому ограничиваем список до 1080p — всё в нём играет везде.
+		if f.Height > 0 && f.Height <= 1080 && f.Vcodec != "" && f.Vcodec != "none" && !seen[f.Height] {
 			seen[f.Height] = true
 			heights = append(heights, f.Height)
 		}
@@ -230,21 +232,29 @@ func buildQualities(formats []ytFormat) []qualityOption {
 }
 
 // buildFormatArgs преобразует выбор качества в аргументы yt-dlp (-f и сопутствующие).
+//
+// Для видео отдаём приоритет H.264 (avc) + AAC (m4a): такая связка в .mp4
+// проигрывается всеми плеерами. Без этого yt-dlp берёт новейшие кодеки (AV1/VP9 +
+// Opus), которые QuickTime и стандартный плеер Windows не воспроизводят.
 func buildFormatArgs(quality string) []string {
+	// «Лучшее» тоже ограничено 1080p: выше — только несовместимые VP9/AV1.
+	const bestCompat = "bv*[height<=1080][vcodec^=avc]+ba[ext=m4a]/bv*[height<=1080]+ba/b[height<=1080]/best"
 	switch quality {
 	case "audio-m4a":
 		return []string{"-f", "ba[ext=m4a]/ba/bestaudio"}
 	case "audio-mp3":
 		return []string{"-f", "ba/bestaudio", "-x", "--audio-format", "mp3"}
 	case "", "best":
-		return []string{"-f", "bv*+ba/best", "--merge-output-format", "mp4"}
+		return []string{"-f", bestCompat, "--merge-output-format", "mp4"}
 	default:
-		// Числовая высота, например "720" → не выше 720p.
+		// Числовая высота, например "720" → не выше 720p, тоже с приоритетом avc+m4a.
 		if _, err := strconv.Atoi(quality); err == nil {
-			sel := "bv*[height<=" + quality + "]+ba/b[height<=" + quality + "]/best"
+			h := quality
+			sel := "bv*[height<=" + h + "][vcodec^=avc]+ba[ext=m4a]/" +
+				"bv*[height<=" + h + "]+ba/b[height<=" + h + "]/best"
 			return []string{"-f", sel, "--merge-output-format", "mp4"}
 		}
-		return []string{"-f", "bv*+ba/best", "--merge-output-format", "mp4"}
+		return []string{"-f", bestCompat, "--merge-output-format", "mp4"}
 	}
 }
 
@@ -333,7 +343,7 @@ func handleDownload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := cmd.Wait(); err != nil {
-		sse(w, flusher, "error", "Ошибка скачивания: "+tail(stderr.String()))
+		sse(w, flusher, "error", augmentCookieError("Ошибка скачивания: "+tail(stderr.String())))
 		return
 	}
 
@@ -359,6 +369,17 @@ func writeErr(w http.ResponseWriter, code int, msg string) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
+// augmentCookieError добавляет к ошибке про cookies понятную подсказку: на Windows
+// файл cookies часто заблокирован запущенным браузером (или зашифрован), и надёжнее
+// использовать экспортированный cookies.txt.
+func augmentCookieError(msg string) string {
+	low := strings.ToLower(msg)
+	if strings.Contains(low, "cookie") || strings.Contains(low, "could not copy") {
+		return msg + " — Подсказка: закройте браузер полностью и повторите, либо положите cookies.txt рядом с программой и выберите его в списке."
+	}
+	return msg
 }
 
 // tail возвращает последние строки текста (для компактного показа ошибок).
