@@ -21,6 +21,12 @@ const MAX_ITEMS_PER_TAB = 40;
 const MAX_TABS = 20;
 const MAX_PENDING = 300;
 const MANIFEST_FETCH_LIMIT = 512 * 1024; // читаем не больше 512 КБ манифеста
+// Больше восьми строк качества человеку не нужно, а live-манифесты бывают
+// с сотнями вариантов — список пришлось бы прокручивать вместо выбора.
+const MAX_LEVELS = 8;
+// Кадры-превью живут только в памяти service worker: в storage.session им не
+// место (квота), а на диске у программы свой кеш — повтор дешёвый.
+const MAX_THUMBS = 60;
 
 // --- что считаем медиа ---
 
@@ -44,6 +50,9 @@ const HEADERS_OF_INTEREST = ['referer', 'user-agent', 'cookie', 'origin'];
 
 // tabs[tabId] = {pageUrl, title, drmSeen, segments, updated, items:{[key]: item}}
 let tabs = {};
+// thumbs[key] = data:image/jpeg;base64,… — намеренно отдельно от tabs,
+// иначе картинки уехали бы в chrome.storage.session и съели её квоту.
+const thumbs = new Map();
 // pending[requestId] = {tabId, url, headers, matched, ts}
 const pending = new Map();
 let restored = false;
@@ -264,6 +273,8 @@ async function commit(p, extra) {
     quality: '',
     duration: 0,
     variants: 0,
+    levels: [],
+    live: false,
     drm: false,
     master: false,
     probed: false,
@@ -341,60 +352,153 @@ function updateBadge(tabId, t) {
 
 // --- разбор манифестов: качество, длительность, признак DRM ---
 
-async function probeManifest(tabId, key, url, kind) {
-  let text = '';
+// fetchManifest тянет манифест сессией браузера. Разбор живёт здесь, а не на
+// сервере, намеренно: мастер-манифест часто отдаётся только с куками и Referer
+// страницы, и программа со своего сокета получила бы 403.
+async function fetchManifest(url) {
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 8000);
     const res = await fetch(url, {credentials: 'include', signal: ctrl.signal});
     clearTimeout(timer);
-    if (!res.ok) return;
+    if (!res.ok) return '';
     const buf = await res.arrayBuffer();
-    text = new TextDecoder().decode(buf.slice(0, MANIFEST_FETCH_LIMIT));
+    return new TextDecoder().decode(buf.slice(0, MANIFEST_FETCH_LIMIT));
   } catch (e) {
-    return; // не смогли — не беда, покажем без качества
+    return ''; // не смогли — не беда, покажем без качества
   }
+}
+
+async function probeManifest(tabId, key, url, kind) {
+  const text = await fetchManifest(url);
+  if (!text) return;
 
   await ensureRestored();
-  const t = tabs[tabId];
+  let t = tabs[tabId];
   if (!t || !t.items[key]) return;
-  const item = t.items[key];
+  let item = t.items[key];
 
-  if (kind === 'hls') parseHls(item, text);
+  if (kind === 'hls') parseHls(item, text, url);
   else parseDash(item, text);
 
   scheduleSave();
   updateBadge(tabId, t);
+
+  // У мастер-манифеста нет ни длительности, ни признака эфира — они лежат в
+  // плейлисте варианта. Берём самый лёгкий: он короткий и качать его нечем.
+  if (item.master && item.levels && item.levels.length && item.duration === 0) {
+    const cheapest = item.levels[item.levels.length - 1];
+    if (!cheapest.url) return;
+    const media = await fetchManifest(cheapest.url);
+    if (!media) return;
+    t = tabs[tabId];
+    item = t && t.items[key];
+    if (!item) return;
+    applyMediaPlaylist(item, media);
+    scheduleSave();
+  }
 }
 
-function parseHls(item, text) {
+function absUrl(uri, base) {
+  try {
+    return new URL(uri, base).href;
+  } catch (e) {
+    return '';
+  }
+}
+
+// tidyLevels приводит варианты к списку для попапа: по одному на разрешение
+// (одинаковые высоты с разным битрейтом человеку не выбор, а шум),
+// от большего к меньшему, не длиннее MAX_LEVELS.
+function tidyLevels(levels) {
+  const byHeight = new Map();
+  for (const l of levels) {
+    if (!l.h) continue;
+    const prev = byHeight.get(l.h);
+    if (!prev || l.bw > prev.bw) byHeight.set(l.h, l);
+  }
+  return [...byHeight.values()].sort((a, b) => b.h - a.h).slice(0, MAX_LEVELS);
+}
+
+function parseHls(item, text, baseUrl) {
   // SAMPLE-AES + com.apple.streamingkeydelivery / widevine → DRM.
   // Обычный AES-128 (METHOD=AES-128) — это не DRM, yt-dlp его берёт штатно.
   if (/#EXT-X-(?:SESSION-)?KEY:[^\n]*(?:SAMPLE-AES|com\.apple\.streamingkeydelivery|widevine|urn:uuid:edef8ba9)/i.test(text)) {
     item.drm = true;
   }
-  const variants = [...text.matchAll(/#EXT-X-STREAM-INF:[^\n]*/gi)];
-  if (variants.length) {
-    item.master = true;
-    item.variants = variants.length;
-    let best = 0;
-    for (const v of variants) {
-      const m = v[0].match(/RESOLUTION=(\d+)x(\d+)/i);
-      if (m) best = Math.max(best, parseInt(m[2], 10));
+
+  const lines = text.split(/\r?\n/);
+  const levels = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (!/^#EXT-X-STREAM-INF:/i.test(lines[i].trim())) continue;
+    const attrs = lines[i].trim().slice(lines[i].indexOf(':') + 1);
+    // Адрес варианта — первая непустая строка без «#» после тега.
+    let uri = '';
+    for (let j = i + 1; j < lines.length; j++) {
+      const next = lines[j].trim();
+      if (!next || next.startsWith('#')) continue;
+      uri = next;
+      break;
     }
-    if (best) item.quality = best + 'p';
-  } else {
-    let dur = 0;
-    for (const m of text.matchAll(/#EXTINF:([0-9.]+)/g)) dur += parseFloat(m[1]) || 0;
-    if (dur > 0) item.duration = Math.round(dur);
+    const res = attrs.match(/RESOLUTION=(\d+)x(\d+)/i);
+    // «(?:^|,)» отсекает AVERAGE-BANDWIDTH: атрибуты разделены запятыми.
+    const bw = attrs.match(/(?:^|,)BANDWIDTH=(\d+)/i);
+    levels.push({
+      w: res ? parseInt(res[1], 10) : 0,
+      h: res ? parseInt(res[2], 10) : 0,
+      bw: bw ? parseInt(bw[1], 10) : 0,
+      url: uri ? absUrl(uri, baseUrl) : ''
+    });
   }
+
+  if (levels.length) {
+    item.master = true;
+    item.variants = levels.length;
+    item.levels = tidyLevels(levels);
+    if (item.levels.length) item.quality = item.levels[0].h + 'p';
+    return;
+  }
+  applyMediaPlaylist(item, text);
+}
+
+// applyMediaPlaylist читает плейлист одного варианта: длительность и эфир.
+// У эфира нет #EXT-X-ENDLIST — сумма сегментов в нём означает лишь длину окна,
+// а не длину записи, поэтому её не показываем.
+function applyMediaPlaylist(item, text) {
+  const live = !/#EXT-X-ENDLIST/i.test(text) && !/#EXT-X-PLAYLIST-TYPE:\s*VOD/i.test(text);
+  item.live = live;
+  if (live) return;
+  let dur = 0;
+  for (const m of text.matchAll(/#EXTINF:([0-9.]+)/g)) dur += parseFloat(m[1]) || 0;
+  if (dur > 0) item.duration = Math.round(dur);
 }
 
 function parseDash(item, text) {
   if (/<ContentProtection/i.test(text)) item.drm = true;
-  let best = 0;
-  for (const m of text.matchAll(/height="(\d+)"/gi)) best = Math.max(best, parseInt(m[1], 10));
-  if (best) item.quality = best + 'p';
+  item.live = /type\s*=\s*"dynamic"/i.test(text);
+
+  const levels = [];
+  for (const m of text.matchAll(/<Representation\b[^>]*>/gi)) {
+    const tag = m[0];
+    const h = tag.match(/\bheight="(\d+)"/i);
+    const w = tag.match(/\bwidth="(\d+)"/i);
+    const bw = tag.match(/\bbandwidth="(\d+)"/i);
+    if (!h) continue;
+    // url пустой намеренно: в DASH дорожка не отдельный адрес, выбор уходит
+    // в yt-dlp высотой, а не ссылкой.
+    levels.push({
+      w: w ? parseInt(w[1], 10) : 0,
+      h: parseInt(h[1], 10),
+      bw: bw ? parseInt(bw[1], 10) : 0,
+      url: ''
+    });
+  }
+  if (levels.length) {
+    item.variants = levels.length;
+    item.levels = tidyLevels(levels);
+    if (item.levels.length) item.quality = item.levels[0].h + 'p';
+  }
+
   const d = text.match(/mediaPresentationDuration="PT(?:(\d+)H)?(?:(\d+)M)?(?:([0-9.]+)S)?"/i);
   if (d) {
     const sec = (parseInt(d[1] || 0, 10) * 3600) + (parseInt(d[2] || 0, 10) * 60) + Math.round(parseFloat(d[3] || 0));
@@ -479,7 +583,14 @@ async function findApp(force) {
   return {port: 0, info: null};
 }
 
-async function sendCapture(tabId, item) {
+// sendCapture ставит находку в очередь программы.
+//
+// height — выбор человека в попапе: 0 значит «лучшее». Выбор уходит полем
+// quality («720p»), из которого сервер строит селектор форматов yt-dlp.
+// Отдельным адресом варианта не отправляем намеренно: в HLS звук часто лежит
+// отдельной дорожкой (EXT-X-MEDIA), и плейлист варианта дал бы немое видео,
+// а выбор по высоте на мастер-манифесте yt-dlp сводит с нужным звуком сам.
+async function sendCapture(tabId, item, height) {
   const {port, info} = await findApp(false);
   if (!port) {
     return {ok: false, code: 0, error: 'Программа Video Downloader не запущена. Запустите её и повторите.'};
@@ -496,7 +607,7 @@ async function sendCapture(tabId, item) {
     kind: item.kind,
     headers: item.headers || {},
     size: item.size || 0,
-    quality: item.quality || '',
+    quality: height > 0 ? height + 'p' : '',
     duration: item.duration || 0,
     protocol: PROTOCOL,
     extVersion: EXT_VERSION
@@ -517,6 +628,57 @@ async function sendCapture(tabId, item) {
   } catch (e) {
     appInfo = null;
     return {ok: false, code: 0, error: 'Не удалось связаться с программой: ' + e.message};
+  }
+}
+
+// --- кадр-превью через программу ---
+
+function toBase64(buf) {
+  const bytes = new Uint8Array(buf);
+  let s = '';
+  // Порциями: apply на 30-килобайтном массиве уже упирается в лимит аргументов.
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(s);
+}
+
+// fetchThumb просит программу снять кадр. Адрес берётся из списка находок этой
+// вкладки, а не из сообщения: попап передаёт только ключ, поэтому «превью чего
+// угодно» заказать нельзя даже из самого попапа.
+async function fetchThumb(tabId, key) {
+  const t = tabs[tabId];
+  const item = t && t.items[key];
+  if (!item) return {ok: false};
+  if (thumbs.has(key)) return {ok: true, thumb: thumbs.get(key)};
+
+  const {port} = await findApp(false);
+  if (!port) return {ok: false};
+  try {
+    const ctrl = new AbortController();
+    // Больше серверного таймаута (8 с) на дорогу и очередь из двух ffmpeg.
+    const timer = setTimeout(() => ctrl.abort(), 20000);
+    const res = await fetch(`http://127.0.0.1:${port}/api/preview`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      signal: ctrl.signal,
+      body: JSON.stringify({
+        token: CFG.token || '',
+        url: item.url,
+        kind: item.kind,
+        headers: item.headers || {}
+      })
+    });
+    clearTimeout(timer);
+    if (res.status !== 200) return {ok: false}; // 204 — кадра нет, это нормально
+    const buf = await res.arrayBuffer();
+    if (!buf.byteLength) return {ok: false};
+    const thumb = 'data:image/jpeg;base64,' + toBase64(buf);
+    if (thumbs.size >= MAX_THUMBS) thumbs.delete(thumbs.keys().next().value);
+    thumbs.set(key, thumb);
+    return {ok: true, thumb};
+  } catch (e) {
+    return {ok: false};
   }
 }
 
@@ -548,21 +710,25 @@ async function handleMessage(msg) {
       const t = tabs[msg.tabId];
       const item = t && t.items[msg.key];
       if (!item) return {ok: false, error: 'Запись устарела, обновите список.'};
-      return sendCapture(msg.tabId, item);
+      return sendCapture(msg.tabId, item, msg.height | 0);
     }
     case 'downloadAll': {
       const t = tabs[msg.tabId];
       const list = visibleItems(t).filter((i) => !i.drm);
+      // heights — выбор по каждой строке; чего нет в карте, качаем лучшим.
+      const heights = msg.heights || {};
       let queued = 0;
       let last = null;
       for (const item of list) {
-        const r = await sendCapture(msg.tabId, item);
+        const r = await sendCapture(msg.tabId, item, heights[item.key] | 0);
         if (r.ok) queued++;
         else last = r;
       }
       if (queued === 0 && last) return last;
       return {ok: true, queued};
     }
+    case 'preview':
+      return fetchThumb(msg.tabId, msg.key);
     case 'clear': {
       const t = tabs[msg.tabId];
       if (t) {

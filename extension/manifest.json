@@ -1,11 +1,12 @@
 {
   "manifest_version": 3,
   "name": "Video Downloader — перехват медиа",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Показывает видео и аудио, которые грузит открытая страница, и передаёт их программе Video Downloader на 127.0.0.1. Никаких внешних запросов и аналитики.",
   "permissions": [
     "webRequest",
-    "storage"
+    "storage",
+    "scripting"
   ],
   "host_permissions": [
     "<all_urls>"
