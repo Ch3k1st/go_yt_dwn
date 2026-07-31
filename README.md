@@ -131,8 +131,10 @@ make app        # dist/Video Downloader.app
 make windows-app    # dist/video-downloader-windows.zip
 ```
 
-Кросс-сборка идёт с мака (чистый Go, без cgo). В архиве два файла — `VideoDownloader.exe`
-(окно) и `v-down.exe` (движок), распаковывать нужно оба в одну папку. Окно рисует
+Кросс-сборка идёт с мака (чистый Go, без cgo). В архиве оболочка
+`VideoDownloader.exe`, движок `v-down.exe` и инструкция
+[README-windows.md](docs/README-windows.md); распаковывать нужно всё в одну папку.
+Окно рисует
 **WebView2**: в Windows 11 он встроен, на Windows 10 ставится
 [отдельно](https://developer.microsoft.com/microsoft-edge/webview2/). Консоли нет,
 иконка своя, размер и положение окна запоминаются, закрытие окна гасит движок
