@@ -163,6 +163,8 @@ const indexHTML = `<!DOCTYPE html>
   .head { margin-bottom: var(--s5); }
   .head h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -.02em; }
   .head p { margin: var(--s1) 0 0; color: var(--fg-muted); font-size: 13px; max-width: 70ch; }
+  /* Второй абзац — отдельная мысль, а не продолжение первого: 4px их склеивают. */
+  .head p + p { margin-top: var(--s2); }
   .pane { display: none; }
   .pane.active { display: block; animation: rise .28s ease-out; }
   /* Появление двигает только transform и НЕ трогает opacity. Причина не
@@ -329,6 +331,40 @@ const indexHTML = `<!DOCTYPE html>
      и не появляется ощущение сломанной вёрстки. */
   .bar.indet > i { width: 100%; opacity: .35; animation: pulse 1.2s ease-in-out infinite; }
 
+  /* ---------- Пронумерованная инструкция ---------- */
+  /* Установка расширения — единственное место, где пользователь работает
+     руками в чужой программе. Номера показывают, что это последовательность,
+     а не набор советов (ux-guidelines: Progress Indicators). */
+  .steps { margin: 0; padding: 0; list-style: none; counter-reset: step; }
+  .steps li {
+    position: relative; counter-increment: step;
+    min-height: 24px; padding: 0 0 var(--s3) var(--s6);
+  }
+  .steps li:last-child { padding-bottom: 0; }
+  .steps li::before {
+    content: counter(step);
+    position: absolute; left: 0; top: 0; width: 24px; height: 24px;
+    border-radius: 12px; background: var(--primary); color: var(--on-primary);
+    font: 700 12px/24px var(--font-mono); text-align: center;
+  }
+
+  /* ---------- Путь или адрес, который придётся скопировать ---------- */
+  .pathline {
+    display: flex; align-items: center; gap: var(--s2);
+    margin-top: var(--s2); padding: var(--s2) var(--s3);
+    background: var(--surface-2); border-radius: var(--r-ctl);
+    font: 12px/1.5 var(--font-mono);
+  }
+  .pathline > span { flex: 1; min-width: 0; word-break: break-all; }
+
+  /* ---------- Заголовок вложенной секции списка ---------- */
+  .subhead {
+    display: flex; align-items: center; gap: var(--s2);
+    margin: var(--s5) 0 var(--s3);
+    font-size: 12px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--fg-muted);
+  }
+
   /* ---------- Зона перетаскивания ---------- */
   .drop {
     border: 2px dashed var(--line-strong); border-radius: var(--r-card);
@@ -423,6 +459,13 @@ const indexHTML = `<!DOCTYPE html>
     <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
     stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 9.5 18 20 6"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+    stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 5a1 1 0 0 1 1-1h4.5a2.5 2.5 0 0 1 5 0H19a1 1 0 0 1 1 1v4.5a2.5 2.5 0 0 1 0 5V19a1 1 0 0 1-1 1h-4.5a2.5 2.5 0 0 0-5 0H5a1 1 0 0 1-1-1v-4.5a2.5 2.5 0 0 0 0-5z"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+    stroke-linecap="round" stroke-linejoin="round">
+    <rect x="9" y="9" width="12" height="12" rx="2"/>
+    <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></symbol>
 </defs></svg>
 
 <div class="app">
@@ -443,6 +486,8 @@ const indexHTML = `<!DOCTYPE html>
         <span class="count" id="hcount" hidden>0</span></button>
       <button class="navbtn" data-go="text" type="button">
         <svg width="18" height="18" aria-hidden="true"><use href="#i-text"/></svg>Транскрибация</button>
+      <button class="navbtn" data-go="ext" type="button">
+        <svg width="18" height="18" aria-hidden="true"><use href="#i-ext"/></svg>Расширение</button>
     </nav>
 
     <div class="spacer"></div>
@@ -517,6 +562,21 @@ const indexHTML = `<!DOCTYPE html>
         <p>Локальное распознавание речи через whisper. Интернет не нужен, файлы никуда не уходят.</p>
       </div>
       <div id="tbody"></div>
+    </section>
+
+    <!-- ================= Расширение ================= -->
+    <section class="pane" id="pane-ext">
+      <div class="head">
+        <h1>Расширение для браузера</h1>
+        <p>yt-dlp разбирает сайт снаружи и спотыкается там, где нужен вход или где ссылка
+           подписана под конкретную страницу. Расширение смотрит изнутри браузера: берёт
+           настоящий адрес плеера вместе с куками и заголовками — поэтому качается и то,
+           на чём обычная ссылка отвечает «403».</p>
+        <p>Установить его молча программа не может: браузеры это запрещают намеренно.
+           Остаются три действия вручную — открыть страницу расширений, включить
+           «Режим разработчика» и указать папку. Страницу и папку программа откроет сама.</p>
+      </div>
+      <div id="extbody"></div>
     </section>
   </main>
 </div>
@@ -604,10 +664,22 @@ var native = {
   pickFile: function () { return this.send({ action: 'pickFile' }); }
 };
 native.ok = native.mac || native.win;
-function copyPath(path) {
-  if (!path) { return; }
-  if (navigator.clipboard) { navigator.clipboard.writeText(path).catch(function () {}); }
-  banner('info', 'Путь скопирован', path, null);
+function copyPath(path) { copyText(path, 'Путь скопирован'); }
+
+/* Буфер обмена есть не везде (старый WebView, страница открыта не с 127.0.0.1).
+   Молчать в таком случае нельзя: адрес страницы расширений пользователю всё
+   равно надо вставить руками, поэтому показываем текст баннером. */
+function copyText(text, okTitle) {
+  if (!text) { return; }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function () {
+      banner('info', okTitle, text, null);
+    }).catch(function () {
+      banner('info', 'Скопируйте вручную', text, null);
+    });
+    return;
+  }
+  banner('info', 'Скопируйте вручную', text, null);
 }
 
 /* ============================== Состояние ============================== */
@@ -630,7 +702,13 @@ var state = {
   tjob: null,           // текущая задача транскрибации
   tfile: '',            // выбранный файл
   tfileTitle: '',
-  tmodelJob: null       // скачивание модели
+  tmodelJob: null,      // скачивание модели
+  /* Расширение браузера: состояние ручки /api/extension/status и результат
+     последней подготовки к установке (шаги показываем, пока не ушли с раздела). */
+  ext: { state: 'idle', data: null, error: '', installing: '', install: null, installError: '' },
+  /* Очередь из расширения живёт на сервере, а не в этой вкладке: список
+     переживает перезагрузку окна, поэтому его только читаем. */
+  caps: { ok: false, jobs: [], connected: false }
 };
 var streams = {};       // id задачи -> EventSource
 var tpoll = null;       // таймер опроса прогресса транскрибации
@@ -706,6 +784,11 @@ function go(section) {
     else { btns[j].removeAttribute('aria-current'); }
   }
   if (section === 'text') { loadWhisper(); }
+  /* Состояние связи с расширением опрашиваем только пока раздел на экране:
+     фоновый опрос ничего не показывает, а сервер дёргает. */
+  if (section === 'ext') { extSig = ''; startExtPoll(); } else { stopExtPoll(); }
+  /* На открытой очереди задачи расширения читаем чаще — см. capDelay. */
+  if (section === 'queue') { loadCaps(); }
   render();
 }
 
@@ -1023,13 +1106,20 @@ var TASK_LABEL = {
 function renderQueue() {
   var host = $('qbody');
   var badge = $('qcount');
+  var caps = visibleCaps();
   var active = state.queue.filter(function (t) {
     return t.state === 'queued' || t.state === 'running';
-  }).length;
+  }).length + caps.filter(capBusy).length;
   badge.hidden = active === 0;
   badge.textContent = active;
 
   clear(host);
+  /* Пустое состояние показываем, только когда пусто и здесь, и у расширения:
+     иначе «очередь пуста» стояло бы прямо над списком задач. */
+  if (!state.queue.length && caps.length) {
+    renderCaptureSection(host);
+    return;
+  }
   if (!state.queue.length) {
     var card = el('div', 'card');
     var em = el('div', 'empty');
@@ -1054,6 +1144,7 @@ function renderQueue() {
     list.appendChild(taskRow(t, i));
   });
   host.appendChild(list);
+  renderCaptureSection(host);
 }
 
 function taskRow(t, index) {
@@ -1138,6 +1229,209 @@ function taskRow(t, index) {
   }
   item.appendChild(acts);
   return item;
+}
+
+/* ==================== Очередь из расширения браузера =================== */
+/* Показана отдельной секцией внутри «Очереди», а не вперемешку с обычными
+   задачами. Причина не косметическая: у этих задач другой владелец. Обычную
+   задачу ведёт вкладка (SSE, отмена = закрыть поток, можно повторить, при
+   перезагрузке окна она исчезает), задачу из расширения ведёт сервер (живёт
+   без интерфейса, отменяется ручкой, повторить нечем). В общем списке
+   половина строк молча теряла бы кнопки, а часть задач необъяснимо
+   переживала бы перезагрузку — разделение честнее. */
+
+var CAP_LABEL = {
+  queued:      { chip: '',     text: 'В очереди' },
+  downloading: { chip: 'work', text: 'Скачивается' },
+  done:        { chip: 'ok',   text: 'Готово' },
+  error:       { chip: 'err',  text: 'Ошибка' },
+  canceled:    { chip: '',     text: 'Отменено' }
+};
+var CAP_KIND = { hls: 'HLS-поток', dash: 'DASH-поток', file: 'Файл' };
+
+function capBusy(j) { return j.state === 'queued' || j.state === 'downloading'; }
+
+/* Завершённые задачи расширения убираются только из списка на экране: удалять
+   их у сервера нечем, а кнопка «Убрать завершённые» обязана убирать всё, что
+   видно, — иначе она наполовину не работает. Список убранных переживает
+   перезагрузку окна (иначе строки вернулись бы сами) и чистится по факту:
+   в нём остаются только те задачи, которые сервер ещё помнит. */
+var capHidden = lsGet('vd.caphidden', {}) || {};
+function visibleCaps() {
+  return (state.caps.jobs || []).filter(function (j) { return !capHidden[j.id]; });
+}
+function hideFinishedCaps() {
+  var changed = false;
+  (state.caps.jobs || []).forEach(function (j) {
+    if (!capBusy(j) && !capHidden[j.id]) { capHidden[j.id] = true; changed = true; }
+  });
+  if (changed) { lsSet('vd.caphidden', capHidden); }
+}
+function pruneHidden(jobs) {
+  var next = {}, changed = false;
+  jobs.forEach(function (j) { if (capHidden[j.id]) { next[j.id] = true; } });
+  for (var k in capHidden) { if (!next[k]) { changed = true; } }
+  capHidden = next;
+  if (changed) { lsSet('vd.caphidden', capHidden); }
+}
+
+var capTimer = null;
+/* Интервал опроса подстраивается под то, что происходит: качается — часто,
+   раздел закрыт или окно свёрнуто — редко. Сервер локальный, но крутить
+   лишний запрос в секунду в фоне всё равно незачем. */
+function capDelay() {
+  if (document.hidden) { return 6000; }
+  if (!state.caps.ok) { return 15000; }
+  var busy = (state.caps.jobs || []).filter(capBusy).length > 0;
+  if (busy) { return state.section === 'queue' ? 1200 : 2500; }
+  return state.section === 'queue' ? 3000 : 8000;
+}
+
+function loadCaps() {
+  if (capTimer) { clearTimeout(capTimer); capTimer = null; }
+  fetch('/api/capture/jobs').then(function (r) {
+    if (!r.ok) { throw new Error('HTTP ' + r.status); }
+    return r.json();
+  }).then(function (d) {
+    state.caps.ok = true;
+    state.caps.jobs = d.jobs || [];
+    state.caps.connected = !!d.connected;
+    pruneHidden(state.caps.jobs);
+    renderQueue();
+    capTimer = setTimeout(loadCaps, capDelay());
+  }).catch(function () {
+    /* Ручки нет (старая сборка) или интерфейс открыт не с этой машины —
+       тогда секции просто нет. Баннером не мешаем: пользователь этой очереди
+       не заводил и чинить ему нечего. */
+    state.caps.ok = false;
+    state.caps.jobs = [];
+    renderQueue();
+    capTimer = setTimeout(loadCaps, capDelay());
+  });
+}
+
+function cancelCapture(j) {
+  j.state = 'canceled';        /* оптимистично: ответ сервера всё равно перекроет */
+  j.speed = '';
+  j.eta = '';
+  renderQueue();
+  fetch('/api/capture/cancel', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: j.id })
+  }).then(function (r) {
+    /* 404 — задача уже завершилась сама, это не ошибка. */
+    if (!r.ok && r.status !== 404) { throw new Error('HTTP ' + r.status); }
+    loadCaps();
+  }).catch(function () {
+    banner('err', 'Задача не отменилась',
+      'Движок не ответил на отмену. Проверьте, что программа запущена.', null);
+    loadCaps();
+  });
+}
+
+function renderCaptureSection(host) {
+  var jobs = visibleCaps();
+  if (!jobs.length) { return; }
+
+  var head = el('div', 'subhead');
+  head.appendChild(icon('i-ext', 14));
+  head.appendChild(el('span', null, 'Поймано расширением'));
+  host.appendChild(head);
+
+  var list = el('div', 'list');
+  jobs.forEach(function (j, i) { list.appendChild(captureRow(j, i)); });
+  host.appendChild(list);
+  host.appendChild(el('div', 'hint',
+    'Эти задачи ведёт сама программа: список не пропадёт при перезагрузке окна ' +
+    'и хранит последние 50 записей. Кнопка «Убрать завершённые» скрывает их с экрана.'));
+}
+
+function captureRow(j, index) {
+  var item = el('div', 'item');
+  var key = 'c' + j.id;
+  if (seenRows[key]) {
+    item.style.animation = 'none';
+  } else {
+    seenRows[key] = true;
+    item.style.animationDelay = Math.min(index, 10) * 0.03 + 's';
+  }
+
+  var ic = icon('i-ext', 20);
+  ic.style.color = 'var(--fg-muted)';
+  ic.style.flex = 'none';
+  item.appendChild(ic);
+
+  var body = el('div', 'body');
+  var title = j.title || baseName(j.file) || j.url || 'Без названия';
+  var name = el('div', 'name', title);
+  name.title = title;
+  body.appendChild(name);
+
+  var meta = CAP_LABEL[j.state] || CAP_LABEL.queued;
+  var sub = el('div', 'sub');
+  var chip = el('span', 'chip ' + meta.chip, meta.text);
+  chip.style.marginRight = '8px';
+  sub.appendChild(chip);
+
+  var parts = [];
+  if (CAP_KIND[j.kind]) { parts.push(CAP_KIND[j.kind]); }
+  var from = hostOf(j.pageUrl);
+  if (from) { parts.push('со страницы ' + from); }
+  if (j.state === 'downloading') {
+    parts.push(Math.round(j.percent || 0) + '%');
+    if (j.speed) { parts.push(j.speed); }
+    if (j.eta) { parts.push('осталось ' + j.eta); }
+  }
+  if (j.state === 'done' && j.file) { parts.push(baseName(j.file)); }
+  if (j.state === 'error' && j.error) { parts.push(j.error); }
+  sub.appendChild(document.createTextNode(parts.join('  ·  ')));
+  sub.title = parts.join('  ·  ');
+  body.appendChild(sub);
+
+  if (capBusy(j)) {
+    var bar = el('div', 'bar' + (j.state === 'downloading' ? ' work' : ''));
+    if (j.state === 'queued' || !(j.percent > 0)) { bar.classList.add('indet'); }
+    bar.setAttribute('role', 'progressbar');
+    bar.setAttribute('aria-valuemin', '0');
+    bar.setAttribute('aria-valuemax', '100');
+    bar.setAttribute('aria-valuenow', Math.round(j.percent || 0));
+    bar.setAttribute('aria-label', 'Прогресс загрузки: ' + title);
+    var fill = el('i');
+    if (!bar.classList.contains('indet')) { fill.style.width = (j.percent || 0) + '%'; }
+    bar.appendChild(fill);
+    body.appendChild(bar);
+  }
+  item.appendChild(body);
+
+  var acts = el('div', 'acts');
+  function act(iconId, label, run) {
+    var b = el('button', 'btn btn-icon');
+    b.type = 'button';
+    b.title = label;
+    b.setAttribute('aria-label', label);
+    b.appendChild(icon(iconId, 16));
+    b.addEventListener('click', run);
+    acts.appendChild(b);
+  }
+  if (capBusy(j)) {
+    act('i-x', 'Отменить', function () { cancelCapture(j); });
+  }
+  if (j.state === 'done' && j.file) {
+    act('i-folder', 'Показать в папке', function () { native.reveal(j.file); });
+    act('i-text', 'Транскрибировать', function () { pickForText(j.file, title); });
+  }
+  item.appendChild(acts);
+  return item;
+}
+
+/* Домен страницы, на которой поймали видео: полный адрес в строку не влезает,
+   а «со страницы rutube.ru» сразу объясняет, откуда взялась задача. */
+function hostOf(raw) {
+  if (!raw) { return ''; }
+  var m = String(raw).match(/^[a-z]+:\/\/([^/?#]+)/i);
+  if (!m) { return ''; }
+  return m[1].replace(/^www\./i, '');
 }
 
 /* ============================== История =============================== */
@@ -1728,6 +2022,15 @@ function selectField(id, label, options, def) {
 /* Без yt-dlp и ffmpeg скачивание не заработает вовсе, поэтому состояние
    показывается баннером поверх всех разделов. Установка на сервере идёт
    в фоне — её ход опрашиваем отдельной ручкой. */
+
+/* Ошибка от сервера — это текст Go («... connection refused»), без точки
+   в конце. Приклеенная к нему подсказка читается как одно предложение,
+   поэтому закрываем его сами. */
+function sentence(s) {
+  s = String(s || '').trim();
+  if (!s) { return ''; }
+  return (/[.!?…]$/.test(s) ? s : s + '.') + ' ';
+}
 function loadDeps() {
   fetch('/api/deps').then(function (r) {
     if (!r.ok) { throw new Error('нет ручки'); }
@@ -1770,11 +2073,393 @@ function pollDeps() {
     dropBanner('Устанавливаю зависимости');
     if (d.state === 'error') {
       banner('err', 'Установка не удалась',
-        (d.error || '') + ' Поставьте yt-dlp и ffmpeg вручную и перезапустите программу.', null);
+        sentence(d.error) + 'Поставьте yt-dlp и ffmpeg вручную и перезапустите программу.', null);
       return;
     }
     loadDeps();
   }).catch(function () { dropBanner('Устанавливаю зависимости'); });
+}
+
+/* ========================= Раздел «Расширение» ========================= */
+/* Установить расширение за пользователя нельзя: браузеры на движке Chromium
+   с версии 137 игнорируют --load-extension, и это сделано специально. Поэтому
+   программа берёт на себя всё, что может (распаковать папку, вписать ключ,
+   открыть страницу расширений и папку в Finder), а оставшиеся действия
+   показывает нумерованным списком — с адресом и путём, которые можно
+   скопировать, если браузер проигнорировал команду открыть вкладку. */
+
+var EXT_POLL_MS = 3000;
+var extTimer = null;
+/* Подпись состояния: перерисовываем раздел, только когда изменилось что-то
+   структурное. Секунды с последнего сигнала меняются постоянно — если гнать
+   из-за них полную перерисовку, у пользователя будет пропадать фокус
+   с кнопки, до которой он только что дошёл табом. */
+var extSig = '';
+
+function startExtPoll() {
+  stopExtPoll();
+  loadExtStatus();
+  extTimer = setInterval(function () {
+    if (document.hidden) { return; }
+    loadExtStatus();
+  }, EXT_POLL_MS);
+}
+function stopExtPoll() {
+  if (extTimer) { clearInterval(extTimer); extTimer = null; }
+}
+
+function loadExtStatus() {
+  if (!state.ext.data) { state.ext.state = 'loading'; renderExt(); }
+  fetch('/api/extension/status').then(function (r) {
+    if (!r.ok) { throw new Error('HTTP ' + r.status); }
+    return r.json();
+  }).then(function (d) {
+    state.ext.state = 'ready';
+    state.ext.data = d;
+    var sig = [d.ready, d.connected, d.mismatch, (d.browsers || []).length,
+      d.extVersion, d.port].join('|');
+    if (sig !== extSig) { extSig = sig; renderExt(); } else { updateExtPing(); }
+  }).catch(function () {
+    state.ext.state = 'error';
+    state.ext.error = 'Движок не ответил. Возможно, интерфейс открыт не с этого ' +
+      'компьютера — служебные ручки отвечают только на 127.0.0.1.';
+    extSig = '';
+    renderExt();
+  });
+}
+
+function installExt(browserId) {
+  state.ext.installing = browserId || '*';
+  state.ext.installError = '';
+  extSig = '';
+  renderExt();
+  fetch('/api/extension/install', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ browser: browserId || '', openPage: true, openFolder: true })
+  }).then(function (r) {
+    return r.json().then(function (d) { return { ok: r.ok, d: d }; });
+  }).then(function (res) {
+    state.ext.installing = '';
+    if (!res.ok) {
+      state.ext.installError = res.d.error || 'Программа не смогла подготовить папку расширения.';
+      extSig = '';
+      renderExt();
+      return;
+    }
+    state.ext.install = res.d;
+    extSig = '';
+    loadExtStatus();
+    renderExt();
+    /* Инструкция появилась ниже кнопки — уводим на неё и экран, и фокус,
+       иначе с клавиатуры и в экранном дикторе она останется незамеченной. */
+    var head = $('extsteps');
+    if (head) {
+      head.focus();
+      head.scrollIntoView({ block: 'nearest' });
+    }
+  }).catch(function () {
+    state.ext.installing = '';
+    state.ext.installError = 'Нет связи с движком программы. Проверьте, что приложение не закрыто.';
+    extSig = '';
+    renderExt();
+  });
+}
+
+function fmtAgo(sec) {
+  if (typeof sec !== 'number' || sec < 0) { return ''; }
+  if (sec < 60) { return Math.max(1, Math.round(sec)) + ' с назад'; }
+  if (sec < 3600) { return Math.round(sec / 60) + ' мин назад'; }
+  return 'больше часа назад';
+}
+
+function updateExtPing() {
+  var node = $('extping');
+  if (!node) { return; }
+  node.textContent = extPingText(state.ext.data || {});
+}
+
+function extPingText(d) {
+  if (d.connected) {
+    var ago = fmtAgo(d.lastPing);
+    return 'Сигнал от расширения' + (ago ? ' — ' + ago : ' получен') +
+      (d.extVersion ? ', версия ' + d.extVersion : '') +
+      (d.port ? '. Программа слушает порт ' + d.port + '.' : '.');
+  }
+  if (d.ready) {
+    return 'Папка расширения готова, но браузер ещё не отзывался. Откройте значок ' +
+      'расширения в браузере — он сам постучится в программу. Если значка нет, ' +
+      'пройдите шаги ниже.';
+  }
+  return 'Пока ставить нечего: нажмите «Установить» у нужного браузера — ' +
+    'программа распакует папку с ключом доступа и покажет, что делать дальше.';
+}
+
+/* Раздел перерисовывается по опросу состояния. Если в этот момент фокус стоял
+   на кнопке внутри раздела, после clear() он свалился бы на body — и человек,
+   который дошёл сюда с клавиатуры, потерял бы место. Поэтому запоминаем, что
+   было в фокусе, и возвращаем фокус на тот же элемент. */
+function renderExt() {
+  var host = $('extbody');
+  if (!host) { return; }
+  var active = document.activeElement;
+  var focusId = (active && active.id && host.contains(active)) ? active.id : '';
+  buildExt(host);
+  if (focusId) {
+    var back = document.getElementById(focusId);
+    if (back) { back.focus(); }
+  }
+}
+
+function buildExt(host) {
+  clear(host);
+  var s = state.ext;
+
+  if (s.state === 'loading') {
+    var sk = el('div', 'card');
+    [45, 80, 60].forEach(function (w) {
+      var l = el('div', 'skel skel-line');
+      l.style.width = w + '%';
+      sk.appendChild(l);
+    });
+    host.appendChild(sk);
+    return;
+  }
+
+  if (s.state === 'error') {
+    var errCard = el('div', 'card');
+    var em = el('div', 'empty');
+    var ei = icon('i-alert', 40); ei.classList.add('icon');
+    em.appendChild(ei);
+    em.appendChild(el('b', null, 'Состояние расширения недоступно'));
+    em.appendChild(el('p', null, s.error));
+    var again = el('button', 'btn btn-primary');
+    again.type = 'button';
+    again.style.marginTop = '16px';
+    again.appendChild(icon('i-retry', 16));
+    again.appendChild(el('span', null, 'Проверить ещё раз'));
+    again.addEventListener('click', loadExtStatus);
+    em.appendChild(again);
+    errCard.appendChild(em);
+    host.appendChild(errCard);
+    return;
+  }
+
+  var d = s.data || {};
+  host.appendChild(extStatusCard(d));
+  if (d.mismatch) { host.appendChild(extMismatchBanner(d)); }
+  host.appendChild(extBrowsersCard(d));
+  if (s.install) { host.appendChild(extStepsCard(s.install)); }
+}
+
+function extStatusCard(d) {
+  var card = el('div', 'card');
+  var row = el('div');
+  row.style.display = 'flex';
+  row.style.alignItems = 'flex-start';
+  row.style.gap = '12px';
+
+  /* Состояние не только цветом: в плашке есть и значок, и слово
+     (ux-guidelines: Color Only). */
+  var chip = el('span', 'chip ' + (d.connected ? 'ok' : ''));
+  chip.appendChild(icon(d.connected ? 'i-check' : 'i-alert', 12));
+  chip.appendChild(el('span', null, d.connected ? 'Подключено' : 'Не подключено'));
+  chip.style.flex = 'none';
+  chip.style.marginTop = '2px';
+  row.appendChild(chip);
+
+  var txt = el('div');
+  txt.style.flex = '1';
+  txt.style.minWidth = '0';
+  var head = el('div', null, d.connected
+    ? 'Расширение на связи'
+    : (d.ready ? 'Расширение распаковано, но ещё не отозвалось' : 'Расширение не установлено'));
+  head.style.fontWeight = '600';
+  txt.appendChild(head);
+  var line = el('div', 'hint', extPingText(d));
+  line.id = 'extping';
+  line.style.marginTop = '4px';
+  /* Строка обновляется опросом сама: экранный диктор должен об этом узнать. */
+  line.setAttribute('aria-live', 'polite');
+  txt.appendChild(line);
+  row.appendChild(txt);
+
+  var refresh = el('button', 'btn btn-ghost');
+  refresh.type = 'button';
+  refresh.id = 'extrefresh';       /* id — якорь для возврата фокуса, см. renderExt */
+  refresh.style.flex = 'none';
+  refresh.appendChild(icon('i-retry', 16));
+  refresh.appendChild(el('span', null, 'Проверить'));
+  refresh.addEventListener('click', loadExtStatus);
+  row.appendChild(refresh);
+
+  card.appendChild(row);
+  return card;
+}
+
+function extMismatchBanner(d) {
+  var b = el('div', 'banner warn');
+  b.setAttribute('role', 'status');
+  var ic = icon('i-alert', 20); ic.classList.add('icon');
+  b.appendChild(ic);
+  var txt = el('div', 'txt');
+  txt.appendChild(el('b', null, 'Программа и расширение разной версии'));
+  txt.appendChild(document.createTextNode(
+    'Программа говорит по протоколу ' + (d.protocol || '?') + ', расширение — по ' +
+    (d.extProtocol || '?') + '. Нажмите «Установить» ещё раз, затем «Обновить» ' +
+    'на карточке расширения в браузере.'));
+  b.appendChild(txt);
+  return b;
+}
+
+function extBrowsersCard(d) {
+  var card = el('div', 'card');
+  card.appendChild(el('h2', null, 'Куда установить'));
+  var list = (d.browsers || []);
+  var busy = !!state.ext.installing;
+
+  if (!list.length) {
+    var em = el('div', 'empty');
+    var ic = icon('i-ext', 40); ic.classList.add('icon');
+    em.appendChild(ic);
+    em.appendChild(el('b', null, 'Браузеры не найдены'));
+    em.appendChild(el('p', null,
+      'Программа не нашла на этом компьютере ни одного знакомого браузера. ' +
+      'Папку расширения всё равно можно подготовить и загрузить её вручную.'));
+    var prep = el('button', 'btn btn-primary');
+    prep.type = 'button';
+    prep.id = 'extprepare';
+    prep.style.marginTop = '16px';
+    prep.disabled = busy;
+    prep.appendChild(icon('i-folder', 16));
+    prep.appendChild(el('span', null, busy ? 'Готовлю...' : 'Подготовить папку'));
+    prep.addEventListener('click', function () { installExt(''); });
+    em.appendChild(prep);
+    card.appendChild(em);
+  } else {
+    var rows = el('div', 'list');
+    list.forEach(function (b) {
+      var item = el('div', 'item');
+      item.style.animation = 'none';
+      var bi = icon('i-ext', 20);
+      bi.style.color = 'var(--fg-muted)';
+      bi.style.flex = 'none';
+      item.appendChild(bi);
+
+      var body = el('div', 'body');
+      body.appendChild(el('div', 'name', b.name));
+      var parts = [b.engine === 'firefox' ? 'движок Firefox' : 'движок Chromium'];
+      if (b.temporary) { parts.push('расширение живёт до перезапуска браузера'); }
+      if (b.path) { parts.push(b.path); }
+      var sub = el('div', 'sub', parts.join('  ·  '));
+      sub.title = b.path || '';
+      body.appendChild(sub);
+      item.appendChild(body);
+
+      var go2 = el('button', 'btn btn-primary');
+      go2.type = 'button';
+      go2.id = 'extinstall-' + b.id;
+      go2.style.flex = 'none';
+      go2.disabled = busy;
+      go2.appendChild(el('span', null,
+        state.ext.installing === b.id ? 'Готовлю...' : 'Установить'));
+      go2.addEventListener('click', function () { installExt(b.id); });
+      item.appendChild(go2);
+      rows.appendChild(item);
+    });
+    card.appendChild(rows);
+    card.appendChild(el('div', 'hint',
+      'Кнопку можно нажимать повторно: папка перезапишется свежей версией и новым ' +
+      'ключом доступа, а в браузере останется нажать «Обновить» на карточке расширения.'));
+  }
+
+  if (state.ext.installError) {
+    var eb = el('div', 'banner err');
+    eb.setAttribute('role', 'alert');
+    eb.style.marginTop = '16px';
+    eb.style.marginBottom = '0';
+    var ei = icon('i-alert', 20); ei.classList.add('icon');
+    eb.appendChild(ei);
+    var et = el('div', 'txt');
+    et.appendChild(el('b', null, 'Подготовить расширение не вышло'));
+    et.appendChild(document.createTextNode(state.ext.installError));
+    eb.appendChild(et);
+    card.appendChild(eb);
+  }
+
+  card.appendChild(el('div', 'hint',
+    'Видео с защитой DRM (Netflix, Кинопоиск и подобные) расширение помечает и ' +
+    'скачивать не предлагает — обхода защиты здесь нет и не будет.'));
+  return card;
+}
+
+function extStepsCard(r) {
+  var card = el('div', 'card');
+  var h = el('h2', null, 'Что сделать в браузере');
+  /* tabindex=-1: после нажатия «Установить» фокус уводится сюда программно,
+     в обычный порядок обхода табом заголовок не попадает. */
+  h.id = 'extsteps';
+  h.tabIndex = -1;
+  card.appendChild(h);
+
+  var ol = el('ol', 'steps');
+  (r.steps || []).forEach(function (s) { ol.appendChild(el('li', null, s)); });
+  card.appendChild(ol);
+
+  if (r.dir) {
+    card.appendChild(pathRow(r.dir, 'Папка расширения', function () { native.reveal(r.dir); },
+      'i-folder', 'Показать папку'));
+  }
+  if (r.extPage) {
+    card.appendChild(pathRow(r.extPage, 'Адрес страницы расширений', null, null, null));
+  }
+
+  var notes = [];
+  if (r.extPage && r.pageOpened === false) {
+    notes.push('Браузер не открыл страницу расширений сам — скопируйте адрес выше ' +
+      'и вставьте его в адресную строку.');
+  } else if (r.note) {
+    notes.push(r.note);
+  }
+  if (r.dir && r.folderOpened === false) {
+    notes.push('Окно с папкой тоже не открылось — путь выше можно скопировать и вставить ' +
+      'в диалог выбора папки.');
+  }
+  if (r.files) {
+    notes.push('Распаковано файлов: ' + r.files + '. Ключ доступа уже внутри, копировать ничего не нужно.');
+  }
+  notes.forEach(function (n) { card.appendChild(el('div', 'hint', n)); });
+  return card;
+}
+
+/* Строка с путём или адресом: сам текст, кнопка «скопировать» и, если есть
+   куда вести, кнопка действия. Скопировать нужно обязательно — Chromium умеет
+   проигнорировать внутренний адрес в аргументах запуска. */
+function pathRow(value, label, run, iconId, runLabel) {
+  var wrap = el('div');
+  var lab = el('div', 'lbl', label);
+  lab.style.marginTop = '16px';
+  wrap.appendChild(lab);
+  var row = el('div', 'pathline');
+  row.appendChild(el('span', null, value));
+  var copy = el('button', 'btn btn-icon');
+  copy.type = 'button';
+  copy.title = 'Скопировать';
+  copy.setAttribute('aria-label', 'Скопировать: ' + label);
+  copy.appendChild(icon('i-copy', 16));
+  copy.addEventListener('click', function () { copyText(value, 'Скопировано'); });
+  row.appendChild(copy);
+  if (run) {
+    var act = el('button', 'btn btn-icon');
+    act.type = 'button';
+    act.title = runLabel;
+    act.setAttribute('aria-label', runLabel);
+    act.appendChild(icon(iconId, 16));
+    act.addEventListener('click', run);
+    row.appendChild(act);
+  }
+  wrap.appendChild(row);
+  return wrap;
 }
 
 /* ============================== Отрисовка ============================== */
@@ -1784,6 +2469,7 @@ function render() {
   renderQueue();
   renderHistory();
   if (state.section === 'text') { renderText(); }
+  if (state.section === 'ext') { renderExt(); }
 }
 
 /* ======================== Мост: события снаружи ======================== */
@@ -1849,6 +2535,7 @@ $('qclear').addEventListener('click', function () {
   state.queue = state.queue.filter(function (t) {
     return t.state === 'queued' || t.state === 'running';
   });
+  hideFinishedCaps();
   render();
 });
 $('hclear').addEventListener('click', function () {
@@ -1865,6 +2552,14 @@ $('hopen').addEventListener('click', function () {
   }
 });
 
+/* Окно свернули или перекрыли — опрос притормаживает сам (см. capDelay);
+   вернулись — сразу показываем свежее, а не ждём следующий тик. */
+document.addEventListener('visibilitychange', function () {
+  if (document.hidden) { return; }
+  loadCaps();
+  if (state.section === 'ext') { loadExtStatus(); }
+});
+
 /* Уходя, гасим потоки: иначе сервер продолжит качать в никуда. */
 window.addEventListener('beforeunload', function () {
   Object.keys(streams).forEach(function (k) { streams[k].close(); });
@@ -1873,6 +2568,9 @@ window.addEventListener('beforeunload', function () {
 applyTheme(lsGet('vd.theme', 'auto'));
 loadBrowsers();
 loadDeps();
+/* Задачи из расширения могли появиться до открытия окна — счётчик в панели
+   должен показывать их сразу, а не после захода в «Очередь». */
+loadCaps();
 render();
 $('url').focus();
 </script>

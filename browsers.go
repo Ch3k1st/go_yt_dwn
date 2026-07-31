@@ -45,7 +45,9 @@ var knownBrowsers = []browserSpec{
 		darwinApp:  "Google Chrome.app",
 		windowsRel: []string{`Google\Chrome\Application\chrome.exe`},
 		linuxBins:  []string{"google-chrome", "google-chrome-stable"}},
-	{id: "yandex", name: "Яндекс.Браузер", engine: "chromium", extPage: "browser://tune",
+	// browser://tune — это «Дополнения» Яндекса: там нет ни режима разработчика,
+	// ни кнопки «Загрузить распакованное расширение». Нужен Chromium-менеджер.
+	{id: "yandex", name: "Яндекс.Браузер", engine: "chromium", extPage: "browser://extensions",
 		darwinApp:  "Yandex.app",
 		windowsRel: []string{`Yandex\YandexBrowser\Application\browser.exe`},
 		linuxBins:  []string{"yandex-browser"}},
