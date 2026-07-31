@@ -1,0 +1,172 @@
+/* Popup расширения. Токены — из дизайн-системы самой программы (ui.go):
+   стиль Flat + Minimalism, палитра slate/blue, системные шрифты, шаг сетки 4pt.
+   Дублируются, а не импортируются: popup обязан работать без запущенной программы. */
+
+:root {
+  color-scheme: light;
+  --bg: #F8FAFC;
+  --surface: #FFFFFF;
+  --surface-2: #F1F5FD;
+  --fg: #0F172A;
+  --fg-muted: #64748B;
+  --line: #E4ECFC;
+  --line-strong: #64748B;
+  --primary: #2563EB;
+  --on-primary: #FFFFFF;
+  --success: #059669;
+  --on-success: #0F172A;
+  --warn: #D97706;
+  --on-warn: #0F172A;
+  --danger: #DC2626;
+  --on-danger: #FFFFFF;
+  --shade: rgba(15, 23, 42, .06);
+
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px;
+  --r-ctl: 6px;
+  --r-card: 10px;
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text",
+             "Segoe UI", Roboto, "Noto Sans", system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo,
+               "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+  --dur: .16s;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #0F172A;
+    --surface: #1B2336;
+    --surface-2: #272F42;
+    --fg: #F8FAFC;
+    --fg-muted: #94A3B8;
+    --line: #475569;
+    --line-strong: #94A3B8;
+    --primary: #3B82F6;
+    --on-primary: #0F172A;
+    --success: #22C55E;
+    --on-success: #0F172A;
+    --warn: #F97316;
+    --on-warn: #0F172A;
+    --danger: #EF4444;
+    --on-danger: #0F172A;
+    --shade: rgba(248, 250, 252, .07);
+  }
+}
+
+* { box-sizing: border-box; }
+body {
+  width: 380px; margin: 0; background: var(--bg); color: var(--fg);
+  font: 13px/1.45 var(--font-ui); -webkit-font-smoothing: antialiased;
+}
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: var(--r-ctl); }
+
+/* ---------- Шапка ---------- */
+.top {
+  display: flex; align-items: center; gap: var(--s2);
+  padding: var(--s3) var(--s3);
+  background: var(--surface); border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; z-index: 2;
+}
+.brand { display: flex; align-items: center; gap: var(--s2); flex: 1; min-width: 0; }
+.brand .mark {
+  width: 24px; height: 24px; flex: none; border-radius: var(--r-ctl);
+  background: var(--primary); color: var(--on-primary); display: grid; place-items: center;
+}
+.brand b { font-size: 13px; font-weight: 700; letter-spacing: -.01em; }
+
+/* ---------- Плашки ---------- */
+.chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 20px; padding: 0 var(--s2); border-radius: 10px;
+  font: 600 11px/1 var(--font-ui); white-space: nowrap;
+  background: var(--surface-2); color: var(--fg);
+}
+.chip.ok  { background: var(--success); color: var(--on-success); }
+.chip.err { background: var(--danger);  color: var(--on-danger); }
+.chip.warn{ background: var(--warn);    color: var(--on-warn); }
+.chip.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* ---------- Баннеры ---------- */
+.banner {
+  display: flex; align-items: flex-start; gap: var(--s2);
+  margin: var(--s3) var(--s3) 0; padding: var(--s2) var(--s3);
+  border-radius: var(--r-card); background: var(--surface-2); color: var(--fg);
+  font-size: 12px;
+}
+.banner.err  { background: var(--danger); color: var(--on-danger); }
+.banner.warn { background: var(--warn);   color: var(--on-warn); }
+.banner.info { background: var(--primary);color: var(--on-primary); }
+.banner b { display: block; font-size: 12.5px; margin-bottom: 2px; }
+.banner .icon { flex: none; margin-top: 1px; }
+
+/* ---------- Список находок ---------- */
+main { padding: var(--s3); min-height: 96px; max-height: 400px; overflow-y: auto; }
+.list { display: flex; flex-direction: column; gap: var(--s2); }
+.item {
+  display: flex; align-items: center; gap: var(--s2);
+  padding: var(--s2) var(--s2) var(--s2) var(--s3);
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-card);
+  animation: rise .25s ease-out both;
+}
+@keyframes rise { from { transform: translateY(6px); } }
+@media (prefers-reduced-motion: reduce) { .item { animation: none; } .skel { animation: none; } }
+.item.blocked { border-style: dashed; }
+.item .body { flex: 1; min-width: 0; }
+.item .name {
+  font-weight: 600; font-size: 12.5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.item .sub {
+  margin-top: 3px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
+}
+.tag {
+  font: 600 10.5px/1 var(--font-mono); color: var(--fg-muted);
+  background: var(--surface-2); border-radius: 4px; padding: 3px 5px;
+  font-variant-numeric: tabular-nums;
+}
+.tag.kind { color: var(--fg); }
+.tag.drm { background: var(--danger); color: var(--on-danger); }
+
+/* ---------- Кнопки ---------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 32px; padding: 0 var(--s3);
+  border: 1px solid transparent; border-radius: var(--r-ctl);
+  background: var(--surface-2); color: var(--fg);
+  font: 600 12.5px/1 var(--font-ui); cursor: pointer; white-space: nowrap;
+  transition: opacity var(--dur) ease-out, background var(--dur) ease-out;
+}
+.btn:hover { opacity: .88; }
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+.btn-primary { background: var(--primary); color: var(--on-primary); }
+.btn-ghost { background: transparent; border-color: var(--line-strong); color: var(--fg); }
+.btn-wide { flex: 1; }
+.item .btn { flex: none; }
+
+/* ---------- Пусто / скелетон ---------- */
+.empty { text-align: center; padding: var(--s5) var(--s3); color: var(--fg-muted); }
+.empty .icon { color: var(--line-strong); }
+.empty b { display: block; color: var(--fg); font-size: 13px; margin: var(--s2) 0 var(--s1); }
+.empty p { margin: 0 auto; max-width: 34ch; font-size: 12px; }
+.skel-list { display: flex; flex-direction: column; gap: var(--s2); }
+.skel { height: 48px; border-radius: var(--r-card); background: var(--surface-2);
+        animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .5; } }
+
+/* ---------- Низ ---------- */
+.bottom {
+  display: flex; gap: var(--s2); padding: var(--s3);
+  background: var(--surface); border-top: 1px solid var(--line);
+  position: sticky; bottom: 0;
+}
+
+/* ---------- Тост ---------- */
+.toast {
+  position: fixed; left: var(--s3); right: var(--s3); bottom: 56px; margin: 0;
+  padding: var(--s2) var(--s3); border-radius: var(--r-card);
+  background: var(--fg); color: var(--bg); font-size: 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,.18);
+}
+.toast.err { background: var(--danger); color: var(--on-danger); }
+.toast.ok  { background: var(--success); color: var(--on-success); }

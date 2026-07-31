@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "Video Downloader — перехват медиа",
+  "version": "1.0.0",
+  "description": "Показывает видео и аудио, которые грузит открытая страница, и передаёт их программе Video Downloader на 127.0.0.1. Никаких внешних запросов и аналитики.",
+  "permissions": [
+    "webRequest",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Video Downloader — найденное медиа",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "minimum_chrome_version": "102"
+}

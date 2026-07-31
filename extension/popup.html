@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Video Downloader</title>
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="mark" aria-hidden="true">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+             stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0 4-4m-4 4-4-4"/><path d="M5 19h14"/></svg>
+      </span>
+      <b>Video Downloader</b>
+    </div>
+    <span id="appState" class="chip" title="Состояние связи с программой">проверка…</span>
+  </header>
+
+  <div id="banners"></div>
+
+  <main id="body">
+    <div class="skel-list" id="skeleton">
+      <div class="skel"></div><div class="skel"></div><div class="skel"></div>
+    </div>
+  </main>
+
+  <footer class="bottom">
+    <button id="all" class="btn btn-primary btn-wide" disabled>Скачать всё</button>
+    <button id="clear" class="btn btn-ghost" title="Очистить список для этой вкладки">Очистить</button>
+  </footer>
+
+  <p id="toast" class="toast" role="status" aria-live="polite" hidden></p>
+
+  <!-- config.js здесь намеренно не подключён: токен нужен только service worker'у. -->
+  <script src="popup.js"></script>
+</body>
+</html>

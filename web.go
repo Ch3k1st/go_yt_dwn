@@ -95,6 +95,10 @@ func runWeb(addr string) {
 	}
 
 	url := "http://" + ln.Addr().String()
+	mainPort := 0
+	if tcp, ok := ln.Addr().(*net.TCPAddr); ok {
+		mainPort = tcp.Port
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handleIndex)
@@ -112,6 +116,21 @@ func runWeb(addr string) {
 	mux.HandleFunc("/api/deps", handleDeps)
 	mux.HandleFunc("/api/deps/install", handleDepsInstall)
 	mux.HandleFunc("/api/deps/progress", handleDepsProgress)
+	// Расширение браузера — см. extension.go, capture.go и docs/extension.md.
+	mux.HandleFunc("/api/ping", handlePing)
+	mux.HandleFunc("/api/capture", handleCapture)
+	mux.HandleFunc("/api/capture/jobs", handleCaptureJobs)
+	mux.HandleFunc("/api/capture/cancel", handleCaptureCancel)
+	mux.HandleFunc("/api/extension/status", handleExtensionStatus)
+	mux.HandleFunc("/api/extension/install", handleExtensionInstall)
+
+	// Порт для расширения: оно ищет программу только в фиксированном диапазоне,
+	// а нативное окно запускает сервер с портом 0 (любой свободный).
+	serverPort = startExtensionListener(mux, mainPort)
+	// Уже установленное расширение обновляем под новую версию программы:
+	// в config.js попадёт актуальный порт.
+	go refreshExtensionIfInstalled()
+
 	fmt.Printf("\n  %s%s▶ Video Downloader%s %s%s%s — веб-оболочка запущена\n", cBold, cCyan, cReset, cDim, version, cReset)
 	fmt.Printf("  %sВеб-оболочка:%s %s%s%s %s(откройте в браузере)%s\n",
 		cDim, cReset, cBold+cGreen, url, cReset, cDim, cReset)
@@ -124,6 +143,30 @@ func runWeb(addr string) {
 	if err := http.Serve(ln, mux); err != nil {
 		fmt.Printf("  %s✗ Сервер остановлен: %v%s\n", cRed, err, cReset)
 	}
+}
+
+// startExtensionListener открывает второй локальный порт из диапазона 8080–8090
+// и обслуживает на нём те же обработчики.
+//
+// Зачем второй порт: нативная оболочка запускает сервер с «-addr 127.0.0.1:0»,
+// то есть на случайном порту, а расширение в браузере умеет искать программу
+// только в фиксированном диапазоне — иначе после каждого запуска его пришлось бы
+// переустанавливать. Порт занят другой копией программы — работаем без него,
+// расширение просто найдёт ту копию.
+func startExtensionListener(mux http.Handler, mainPort int) int {
+	for _, p := range extPortRange {
+		if p == mainPort {
+			return p // главный слушатель уже в нужном диапазоне
+		}
+		ln, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(p))
+		if err != nil {
+			continue
+		}
+		go func() { _ = http.Serve(ln, mux) }()
+		return p
+	}
+	fmt.Printf("  %s⚠ Порты 8080–8090 заняты: расширение браузера не увидит эту копию программы.%s\n", cYellow, cReset)
+	return mainPort
 }
 
 // openBrowser пытается открыть системный браузер на заданном URL.
