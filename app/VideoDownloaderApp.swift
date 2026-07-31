@@ -146,9 +146,11 @@ final class ServerController {
         openLog()
 
         workDir = Self.prepareWorkDir()
+        // -no-open: интерфейс уже показан в этом окне, вкладка браузера лишняя.
+        // -addr с нулевым портом: систему просим выдать любой свободный.
         guard let child = spawnDetached(path: exe,
-                                        args: ["-addr", "127.0.0.1:0"],
-                                        env: Self.childEnvironment(resources: resources),
+                                        args: ["-no-open", "-addr", "127.0.0.1:0"],
+                                        env: ProcessInfo.processInfo.environment,
                                         cwd: workDir) else {
             finish(.failure(StartError.spawnFailed))
             return
@@ -270,21 +272,6 @@ final class ServerController {
             return dir
         }
         return NSHomeDirectory()
-    }
-
-    /// Окружение сервера. Единственное отличие от нашего — первым в PATH идёт
-    /// Resources/noopen с пустой заглушкой `open`.
-    ///
-    /// Зачем: web.go после старта зовёт `open <адрес>` и открывает системный
-    /// браузер. В приложении это лишнее окно с той же страницей. Флага «не
-    /// открывать» у сервера пока нет (это зона B), а заглушка снимает проблему
-    /// целиком и убирается одной строкой, когда флаг появится.
-    private static func childEnvironment(resources: URL) -> [String: String] {
-        var env = ProcessInfo.processInfo.environment
-        let shim = resources.appendingPathComponent("noopen").path
-        let path = env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
-        env["PATH"] = shim + ":" + path
-        return env
     }
 
     // MARK: вывод процесса

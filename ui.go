@@ -590,7 +590,16 @@ var native = {
   },
   reveal: function (path) {
     if (this.send({ action: 'reveal', path: path || '' })) { return; }
-    copyPath(path);
+    /* В браузере моста нет, но папку умеет открыть сам сервер — он на этой же
+       машине. Если и это не вышло, остаётся отдать путь в буфер обмена. */
+    if (!path) { return; }
+    fetch('/api/reveal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: path })
+    }).then(function (r) {
+      if (!r.ok) { copyPath(path); }
+    }).catch(function () { copyPath(path); });
   },
   pickFile: function () { return this.send({ action: 'pickFile' }); }
 };
@@ -1716,30 +1725,56 @@ function selectField(id, label, options, def) {
 }
 
 /* ====================== Проверка зависимостей ========================== */
-/* Ручки /api/deps в сервере пока нет — если её нет, состояние просто не
-   показывается. Как только она появится, баннер заработает сам. */
+/* Без yt-dlp и ffmpeg скачивание не заработает вовсе, поэтому состояние
+   показывается баннером поверх всех разделов. Установка на сервере идёт
+   в фоне — её ход опрашиваем отдельной ручкой. */
 function loadDeps() {
   fetch('/api/deps').then(function (r) {
     if (!r.ok) { throw new Error('нет ручки'); }
     return r.json();
   }).then(function (d) {
     state.deps = d;
+    if (d.installing) { pollDeps(); return; }
     var missing = (d.missing || []).slice();
-    if (!missing.length && d.ok !== false) { dropBanner('Не хватает зависимостей'); return; }
+    if (!missing.length && d.ok !== false) {
+      dropBanner('Не хватает зависимостей');
+      return;
+    }
     banner('warn', 'Не хватает зависимостей',
-      'Не найдены: ' + missing.join(', ') + '. Без них скачивание не заработает.', {
-        label: 'Установить',
-        run: function () {
-          banner('info', 'Устанавливаю', 'Скачиваю недостающие компоненты...', null);
-          fetch('/api/deps/install', { method: 'POST' })
-            .then(function () { loadDeps(); })
-            .catch(function () {
-              banner('err', 'Установка не удалась',
-                'Поставьте yt-dlp и ffmpeg вручную и перезапустите программу.', null);
-            });
-        }
-      });
+      'Не найдены: ' + missing.join(', ') + '. Без них скачивание не заработает.',
+      { label: 'Установить', run: installDeps });
   }).catch(function () { state.deps = null; });
+}
+
+function installDeps() {
+  dropBanner('Не хватает зависимостей');
+  banner('info', 'Устанавливаю зависимости', 'Начинаю...', null);
+  fetch('/api/deps/install', { method: 'POST' }).then(function (r) {
+    /* 409 — установка уже идёт: это не ошибка, просто следим за ней. */
+    if (!r.ok && r.status !== 409) { throw new Error('HTTP ' + r.status); }
+    pollDeps();
+  }).catch(function () {
+    dropBanner('Устанавливаю зависимости');
+    banner('err', 'Установка не удалась',
+      'Поставьте yt-dlp и ffmpeg вручную и перезапустите программу.', null);
+  });
+}
+
+function pollDeps() {
+  fetch('/api/deps/progress').then(function (r) { return r.json(); }).then(function (d) {
+    if (d.state === 'installing') {
+      banner('info', 'Устанавливаю зависимости', d.stage || 'Скачиваю...', null);
+      setTimeout(pollDeps, 800);
+      return;
+    }
+    dropBanner('Устанавливаю зависимости');
+    if (d.state === 'error') {
+      banner('err', 'Установка не удалась',
+        (d.error || '') + ' Поставьте yt-dlp и ffmpeg вручную и перезапустите программу.', null);
+      return;
+    }
+    loadDeps();
+  }).catch(function () { dropBanner('Устанавливаю зависимости'); });
 }
 
 /* ============================== Отрисовка ============================== */

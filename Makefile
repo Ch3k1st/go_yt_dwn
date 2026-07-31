@@ -47,13 +47,11 @@ clean:
 # Ручной бандл через swiftc — Xcode-проект для одного файла не нужен.
 APP := $(DIST)/Video Downloader.app
 
-app: $(BIN)/v-down app/VideoDownloaderApp.swift app/Info.plist.in app/make-icon.swift app/noopen/open
+app: $(BIN)/v-down app/VideoDownloaderApp.swift app/Info.plist.in app/make-icon.swift
 	rm -rf "$(APP)"
-	mkdir -p "$(APP)/Contents/MacOS" "$(APP)/Contents/Resources/noopen"
+	mkdir -p "$(APP)/Contents/MacOS" "$(APP)/Contents/Resources"
 	$(SWIFTC) -O -swift-version 5 -o "$(APP)/Contents/MacOS/VideoDownloader" app/VideoDownloaderApp.swift
 	cp $(BIN)/v-down "$(APP)/Contents/Resources/"
-	cp app/noopen/open "$(APP)/Contents/Resources/noopen/"
-	chmod +x "$(APP)/Contents/Resources/noopen/open"
 	sed "s/@VERSION@/$(VERSION)/" app/Info.plist.in > "$(APP)/Contents/Info.plist"
 	rm -rf $(DIST)/icon.iconset
 	swift app/make-icon.swift $(DIST)/icon.iconset
@@ -75,10 +73,11 @@ $(DIST)/v-down.exe: $(wildcard *.go) go.mod
 # бинарник остался без зависимостей). -H windowsgui убирает окно консоли.
 WINAPP := $(DIST)/VideoDownloader.exe
 
-windows-app: $(DIST)/v-down.exe $(WINAPP)
+windows-app: $(DIST)/v-down.exe $(WINAPP) docs/README-windows.md
+	cp docs/README-windows.md $(DIST)/README-windows.md
 	cd $(DIST) && rm -f video-downloader-windows.zip && \
-		zip -q video-downloader-windows.zip VideoDownloader.exe v-down.exe
-	@echo "готово: $(DIST)/video-downloader-windows.zip"
+		zip -q video-downloader-windows.zip VideoDownloader.exe v-down.exe README-windows.md
+	@echo "готово: $(DIST)/video-downloader-windows.zip (оболочка + движок + README)"
 
 $(WINAPP): $(wildcard app-windows/*.go) app-windows/go.mod
 	@mkdir -p $(DIST)

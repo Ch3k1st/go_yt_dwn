@@ -72,15 +72,10 @@ func startServer(onExit func()) (*serverProc, error) {
 		return nil, fmt.Errorf("рядом с оболочкой нет %s — распакуйте из архива оба файла", serverExe)
 	}
 
-	// Сервер при старте открывает браузер. Флаг «-no-open» ему только предстоит
-	// завести, поэтому сначала пробуем с ним, а если сборка его не знает
-	// (flag.Parse ругается и выходит) — повторяем без него.
-	s, err := launch(exe, dir, []string{"-no-open", "-addr", "127.0.0.1:0"}, onExit)
-	if err == nil {
-		return s, nil
-	}
-	log.Printf("запуск с -no-open не удался (%v) — пробуем без флага", err)
-	return launch(exe, dir, []string{"-addr", "127.0.0.1:0"}, onExit)
+	// -no-open: интерфейс уже показан в этом окне, вкладка браузера лишняя.
+	// -addr с нулевым портом: систему просим выдать любой свободный.
+	// Движок кладётся в архив вместе с оболочкой, так что флаг он понимает.
+	return launch(exe, dir, []string{"-no-open", "-addr", "127.0.0.1:0"}, onExit)
 }
 
 func launch(exe, dir string, args []string, onExit func()) (*serverProc, error) {
