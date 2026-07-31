@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"net"
 	"net/http"
@@ -14,6 +15,41 @@ import (
 	"strconv"
 	"strings"
 )
+
+// Флаги веб-режима. Объявлены здесь, а разбирает их общий flag.Parse() в main.go —
+// так настройки сервера лежат рядом с самим сервером.
+var (
+	// openUIFlag / noOpenFlag — принудительно открыть или принудительно не открывать
+	// браузер при старте. По умолчанию оба выключены, и решает openUIAtStart().
+	openUIFlag = flag.Bool("open", false, "открыть веб-оболочку в браузере при старте")
+	noOpenFlag = flag.Bool("no-open", false, "не открывать браузер при старте (нативные оболочки передают этот флаг)")
+	// outDirFlag — куда складывать скачанное. Значение по умолчанию прежнее,
+	// чтобы консольный и веб-режимы вели себя как раньше.
+	outDirFlag = flag.String("out", "downloads", "папка для скачанных файлов")
+)
+
+// openUIAtStart решает, открывать ли браузер при запуске сервера.
+//
+// Поведение зависит от платформы: на macOS и Windows у программы есть своё
+// нативное окно, и вкладка браузера рядом с ним — лишняя. На Linux нативной
+// оболочки нет, поэтому там браузер по-прежнему открывается сам.
+func openUIAtStart() bool {
+	if *noOpenFlag {
+		return false
+	}
+	if *openUIFlag {
+		return true
+	}
+	return runtime.GOOS == "linux"
+}
+
+// downloadsDir — папка для скачанного (флаг -out).
+func downloadsDir() string {
+	if *outDirFlag != "" {
+		return *outDirFlag
+	}
+	return "downloads"
+}
 
 // cookieArgs строит флаги yt-dlp для передачи cookies из выбранного источника.
 // Используется и консольным режимом (downloadVideo), и веб-обработчиками.
@@ -41,7 +77,9 @@ func resolveCookie(browsers []browserInfo, idx int) browserInfo {
 }
 
 func runWeb(addr string) {
-	ensureDependencies()
+	// В веб-режиме отсутствие зависимостей — не повод завершаться: интерфейс
+	// покажет баннер и предложит установить их кнопкой (/api/deps).
+	ensureDependenciesWeb()
 	// Поднимаем очередь транскрибации: она же чистит временные файлы,
 	// оставшиеся после аварийных завершений.
 	transcriber.start()
@@ -70,12 +108,18 @@ func runWeb(addr string) {
 	mux.HandleFunc("/api/whisper/status", handleWhisperStatus)
 	mux.HandleFunc("/api/whisper/install", handleWhisperInstall)
 	mux.HandleFunc("/api/reveal", handleReveal)
-
+	// Зависимости: состояние и установка по кнопке (см. deps_api.go).
+	mux.HandleFunc("/api/deps", handleDeps)
+	mux.HandleFunc("/api/deps/install", handleDepsInstall)
+	mux.HandleFunc("/api/deps/progress", handleDepsProgress)
 	fmt.Printf("\n  %s%s▶ Video Downloader%s %s%s%s — веб-оболочка запущена\n", cBold, cCyan, cReset, cDim, version, cReset)
-	fmt.Printf("  %sОткройте в браузере:%s %s%s%s\n", cDim, cReset, cBold+cGreen, url, cReset)
+	fmt.Printf("  %sВеб-оболочка:%s %s%s%s %s(откройте в браузере)%s\n",
+		cDim, cReset, cBold+cGreen, url, cReset, cDim, cReset)
 	fmt.Printf("  %sДля остановки нажмите Ctrl+C%s\n\n", cDim, cReset)
 
-	openBrowser(url)
+	if openUIAtStart() {
+		openBrowser(url)
+	}
 
 	if err := http.Serve(ln, mux); err != nil {
 		fmt.Printf("  %s✗ Сервер остановлен: %v%s\n", cRed, err, cReset)
@@ -287,7 +331,7 @@ func handleDownload(w http.ResponseWriter, r *http.Request) {
 	cookieIdx, _ := strconv.Atoi(r.URL.Query().Get("cookie"))
 	cookie := resolveCookie(detectBrowsers(), cookieIdx)
 
-	outputDir := "downloads"
+	outputDir := downloadsDir()
 	_ = os.MkdirAll(outputDir, os.ModePerm)
 
 	progressTpl := "__PROGRESS__%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s"
@@ -368,6 +412,30 @@ func sse(w http.ResponseWriter, f http.Flusher, event, data string) {
 	data = strings.ReplaceAll(data, "\n", " ")
 	fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, data)
 	f.Flush()
+}
+
+// localRequest защищает служебные ручки от DNS-rebinding: браузер подставит в Host
+// имя сайта, а не 127.0.0.1, и запрос будет отклонён.
+func localRequest(r *http.Request) bool {
+	host := r.Host
+	if h, _, err := net.SplitHostPort(r.Host); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[]")
+	switch host {
+	case "127.0.0.1", "localhost", "::1":
+		return true
+	}
+	return false
+}
+
+// requireLocal — общий вход для ручек, которые не должен видеть ни один сайт.
+func requireLocal(w http.ResponseWriter, r *http.Request) bool {
+	if !localRequest(r) {
+		writeErr(w, http.StatusForbidden, "Доступ только с локального адреса")
+		return false
+	}
+	return true
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
