@@ -1,6 +1,7 @@
 # Исполняемые файлы
 v-down
 v-down.exe
+video-downloader
 *.exe
 
 # Папка с загрузками
@@ -11,6 +12,7 @@ tools/
 
 # Релизные сборки
 dist/
+bin/
 
 # Системные файлы
 .DS_Store
