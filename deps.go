@@ -2,9 +2,9 @@ package main
 
 import (
 	"archive/zip"
+	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -224,28 +224,10 @@ func fileExists(path string) bool {
 }
 
 // downloadFile скачивает url в dest (через временный файл, затем атомарное переименование).
+// Молчащее соединение обрывается сторожем downloadWithProgress, а недокачанный .part
+// переживает обрыв: следующая попытка продолжит с этого места.
 func downloadFile(url, dest string) error {
-	resp, err := http.Get(url)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("HTTP %d при загрузке %s", resp.StatusCode, url)
-	}
-
-	tmp := dest + ".part"
-	out, err := os.Create(tmp)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, resp.Body); err != nil {
-		out.Close()
-		os.Remove(tmp)
-		return err
-	}
-	out.Close()
-	return os.Rename(tmp, dest)
+	return downloadWithProgress(context.Background(), url, dest, 0, nil)
 }
 
 // extractFromZip достаёт из zip первый файл, удовлетворяющий match, и пишет его в dest.
