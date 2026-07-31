@@ -22,6 +22,12 @@ var (
 // toolsDir — папка для скачанных зависимостей: рядом с исполняемым файлом (портативно),
 // с откатом в пользовательский кеш, если рядом с exe писать нельзя.
 func toolsDir() string {
+	// Явное указание папки (переносные установки и тесты) важнее всего остального.
+	if custom := os.Getenv("VDOWN_TOOLS_DIR"); custom != "" {
+		if os.MkdirAll(custom, 0o755) == nil {
+			return custom
+		}
+	}
 	if exe, err := os.Executable(); err == nil {
 		d := filepath.Join(filepath.Dir(exe), "tools")
 		if os.MkdirAll(d, 0o755) == nil {
@@ -51,6 +57,25 @@ func ensureDependencies() {
 		fatalDep("ffmpeg", err)
 	}
 	ffmpegPath = ff
+
+	// whisper — необязательная зависимость: без неё работает всё, кроме
+	// транскрибации, поэтому не скачиваем её заранее и не падаем, если её нет.
+	// Установка идёт по требованию из интерфейса (POST /api/whisper/install).
+	if p := findWhisperBinary(dir); p != "" {
+		setWhisperBinary(p)
+		reportDep("whisper", whisperSource(p, dir))
+	} else {
+		fmt.Printf("    %s•%s %s%-8s%s  %s%s%s\n", cDim, cReset, cBold, "whisper", cReset,
+			cDim, "не установлен — поставится по кнопке в интерфейсе", cReset)
+	}
+}
+
+// whisperSource поясняет, откуда взят найденный whisper-cli.
+func whisperSource(path, dir string) string {
+	if strings.HasPrefix(path, dir) {
+		return "из tools/"
+	}
+	return "из PATH"
 }
 
 func fatalDep(name string, err error) {
@@ -136,11 +161,21 @@ func ensureFfmpeg(dir string) (string, error) {
 	return local, nil
 }
 
+// ffmpegDarwinArm64URL — нативная сборка ffmpeg для Apple Silicon (версия зафиксирована,
+// чтобы обновление в источнике не ломало сборку у пользователей).
+const ffmpegDarwinArm64URL = "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-darwin-arm64"
+
 // downloadFfmpeg скачивает и распаковывает статичную сборку ffmpeg в local.
 func downloadFfmpeg(dir, local string) error {
 	switch runtime.GOOS {
 	case "darwin":
-		// evermeet.cx: zip с единственным файлом ffmpeg (x86_64; на Apple Silicon — через Rosetta).
+		if runtime.GOARCH == "arm64" {
+			// На Apple Silicon сборка evermeet (x86_64) без установленной Rosetta
+			// просто не запускается: «bad CPU type in executable». Поэтому здесь
+			// берём готовый нативный arm64-бинарник из релиза ffmpeg-static.
+			return downloadFile(ffmpegDarwinArm64URL, local)
+		}
+		// evermeet.cx: zip с единственным файлом ffmpeg (только x86_64).
 		tmp := filepath.Join(dir, "ffmpeg-dl.zip")
 		if err := downloadFile("https://evermeet.cx/ffmpeg/getrelease/ffmpeg/zip", tmp); err != nil {
 			return err

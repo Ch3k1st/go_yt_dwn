@@ -42,6 +42,9 @@ func resolveCookie(browsers []browserInfo, idx int) browserInfo {
 
 func runWeb(addr string) {
 	ensureDependencies()
+	// Поднимаем очередь транскрибации: она же чистит временные файлы,
+	// оставшиеся после аварийных завершений.
+	transcriber.start()
 
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -60,6 +63,13 @@ func runWeb(addr string) {
 	mux.HandleFunc("/api/browsers", handleBrowsers)
 	mux.HandleFunc("/api/info", handleInfo)
 	mux.HandleFunc("/api/download", handleDownload)
+	// Транскрибация (whisper.cpp) — см. whisper.go и docs/whisper.md.
+	mux.HandleFunc("/api/transcribe", handleTranscribe)
+	mux.HandleFunc("/api/transcribe/progress", handleTranscribeProgress)
+	mux.HandleFunc("/api/transcribe/cancel", handleTranscribeCancel)
+	mux.HandleFunc("/api/whisper/status", handleWhisperStatus)
+	mux.HandleFunc("/api/whisper/install", handleWhisperInstall)
+	mux.HandleFunc("/api/reveal", handleReveal)
 
 	fmt.Printf("\n  %s%s▶ Video Downloader%s %s%s%s — веб-оболочка запущена\n", cBold, cCyan, cReset, cDim, version, cReset)
 	fmt.Printf("  %sОткройте в браузере:%s %s%s%s\n", cDim, cReset, cBold+cGreen, url, cReset)
