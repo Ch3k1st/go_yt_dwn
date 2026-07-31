@@ -120,6 +120,7 @@ func runWeb(addr string) {
 	// Расширение браузера — см. extension.go, capture.go и docs/extension.md.
 	mux.HandleFunc("/api/ping", handlePing)
 	mux.HandleFunc("/api/capture", handleCapture)
+	mux.HandleFunc("/api/preview", handlePreview)
 	mux.HandleFunc("/api/capture/jobs", handleCaptureJobs)
 	mux.HandleFunc("/api/capture/cancel", handleCaptureCancel)
 	mux.HandleFunc("/api/extension/status", handleExtensionStatus)
