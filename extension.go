@@ -8,8 +8,9 @@ package main
 //   * токен — общий секрет программы и расширения; без него /api/capture отдаёт 403,
 //     иначе любой открытый сайт мог бы ставить задачи в очередь;
 //   * служебные ручки (/api/extension/*, /api/capture/jobs) отвечают только на
-//     обращения по локальному адресу и без CORS-заголовков — из вкладки сайта
-//     их результат прочитать нельзя.
+//     обращения по локальному адресу, отвергают запросы с чужим Origin и не
+//     отдают CORS-заголовков — вкладка сайта не может ни дёрнуть их вслепую,
+//     ни прочитать ответ (см. requireLocal в web.go).
 
 import (
 	"crypto/rand"
@@ -304,15 +305,31 @@ func handleExtensionStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 // installResult — ответ на подготовку расширения к установке.
+//
+// PageLaunched / FolderLaunched названы именно так, а не …Opened: программа знает
+// только то, что команду запуска удалось выполнить. Открылась ли на самом деле
+// вкладка со страницей расширений — не знает никто, кроме браузера: Chromium
+// намеренно умеет игнорировать внутренние адреса в аргументах запуска. Поэтому
+// false здесь означает «запустить не вышло вообще», а не «вкладки нет».
+//
+// Указатель, а не bool: поля вовсе нет, если запускать не просили (openPage:false).
+// Иначе интерфейс не отличил бы «не пытались» от «пытались и не смогли» и показал
+// бы человеку ложное «браузер не запустился».
 type installResult struct {
-	Dir          string           `json:"dir"`
-	Files        int              `json:"files"`
-	Browser      installedBrowser `json:"browser"`
-	ExtPage      string           `json:"extPage"`
-	PageOpened   bool             `json:"pageOpened"`
-	FolderOpened bool             `json:"folderOpened"`
-	Note         string           `json:"note"`
-	Steps        []string         `json:"steps"`
+	Dir            string           `json:"dir"`
+	Files          int              `json:"files"`
+	Browser        installedBrowser `json:"browser"`
+	ExtPage        string           `json:"extPage"`
+	PageLaunched   *bool            `json:"pageLaunched,omitempty"`
+	FolderLaunched *bool            `json:"folderLaunched,omitempty"`
+	Note           string           `json:"note"`
+	Steps          []string         `json:"steps"`
+}
+
+// launched переводит ошибку запуска в поле ответа.
+func launched(err error) *bool {
+	ok := err == nil
+	return &ok
 }
 
 // handleExtensionInstall распаковывает расширение и открывает всё, что помогает
@@ -356,7 +373,7 @@ func handleExtensionInstall(w http.ResponseWriter, r *http.Request) {
 			// Chromium из соображений безопасности умеет игнорировать внутренние
 			// адреса в аргументах запуска. Поэтому: запускаем и всегда показываем
 			// адрес текстом — если вкладка не открылась, его вставят вручную.
-			res.PageOpened = launchBrowser(b, b.ExtPage) == nil
+			res.PageLaunched = launched(launchBrowser(b, b.ExtPage))
 			res.Note = "Если страница расширений не открылась сама — вставьте в адресную строку: " + b.ExtPage
 		}
 	} else {
@@ -364,7 +381,7 @@ func handleExtensionInstall(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if wantFolder {
-		res.FolderOpened = openFolder(dir) == nil
+		res.FolderLaunched = launched(openFolder(dir))
 	}
 	writeJSON(w, res)
 }

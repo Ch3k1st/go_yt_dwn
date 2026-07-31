@@ -274,6 +274,73 @@ func TestCaptureRejectsSiteOrigin(t *testing.T) {
 	}
 }
 
+// Кросс-сайтовый POST с телом text/plain уходит без предварительного OPTIONS,
+// и Host в нём — наш 127.0.0.1. Отличить его от своего запроса можно только по
+// Origin, иначе любая открытая вкладка сможет запускать браузер и отменять
+// чужие загрузки (ответ она не прочитает, но действие уже случится).
+func TestRequireLocalRejectsSiteOrigin(t *testing.T) {
+	bad := []string{
+		"https://evil.example",
+		"http://evil.example",
+		"http://127.0.0.1.evil.example",  // локальный адрес как часть чужого имени
+		"http://evil.example:8080",       // порт наш, имя чужое
+		"https://localhost.evil.example", // и так тоже
+		"null",                           // песочница iframe или file://
+	}
+	for _, origin := range bad {
+		r := httptest.NewRequest(http.MethodPost, "/api/extension/install", nil)
+		r.Host = "127.0.0.1:8080"
+		r.Header.Set("Origin", origin)
+		w := httptest.NewRecorder()
+		if requireLocal(w, r) {
+			t.Errorf("Origin %q — сторонний сайт, запрос должен отклоняться", origin)
+		}
+		if w.Code != http.StatusForbidden {
+			t.Errorf("Origin %q: ожидался 403, получен %d", origin, w.Code)
+		}
+	}
+
+	// Своё окно (в том числе нативная оболочка) и клиенты без Origin проходят:
+	// браузер проставляет Origin сам, подделать его со страницы нельзя.
+	ok := []string{"", "http://127.0.0.1:8080", "http://localhost:8080", "http://[::1]:8080"}
+	for _, origin := range ok {
+		r := httptest.NewRequest(http.MethodPost, "/api/extension/install", nil)
+		r.Host = "127.0.0.1:8080"
+		if origin != "" {
+			r.Header.Set("Origin", origin)
+		}
+		w := httptest.NewRecorder()
+		if !requireLocal(w, r) {
+			t.Errorf("Origin %q — своё окно, запрос должен проходить (код %d)", origin, w.Code)
+		}
+	}
+}
+
+// Проверка через настоящий обработчик: без неё легко забыть повесить requireLocal
+// на ручку с побочным действием.
+func TestServiceHandlersRejectSiteOrigin(t *testing.T) {
+	captureTestSetup(t)
+	handlers := map[string]http.HandlerFunc{
+		"/api/extension/install": handleExtensionInstall,
+		"/api/extension/status":  handleExtensionStatus,
+		"/api/capture/cancel":    handleCaptureCancel,
+		"/api/capture/jobs":      handleCaptureJobs,
+		"/api/reveal":            handleReveal,
+	}
+	for path, h := range handlers {
+		r := httptest.NewRequest(http.MethodPost, path, bytes.NewReader([]byte(`{}`)))
+		r.Host = "127.0.0.1:8080"
+		// text/plain — тот самый «простой» запрос, который уходит без preflight.
+		r.Header.Set("Content-Type", "text/plain;charset=UTF-8")
+		r.Header.Set("Origin", "https://evil.example")
+		w := httptest.NewRecorder()
+		h(w, r)
+		if w.Code != http.StatusForbidden {
+			t.Errorf("%s: запрос со стороннего сайта дал код %d, ожидался 403", path, w.Code)
+		}
+	}
+}
+
 func TestUnpackExtensionInjectsToken(t *testing.T) {
 	dir := captureTestSetup(t)
 	serverPort = 8137

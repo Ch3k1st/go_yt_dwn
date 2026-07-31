@@ -859,6 +859,11 @@ func handleWhisperInstall(w http.ResponseWriter, r *http.Request) {
 // handleReveal показывает файл в проводнике (Finder / Explorer).
 // В контракте этого нет, но кнопка «открыть в Finder» из браузера иначе не работает.
 func handleReveal(w http.ResponseWriter, r *http.Request) {
+	// Ручка открывает окно файлового менеджера — видимое побочное действие,
+	// поэтому чужой странице она недоступна наравне с остальными служебными.
+	if !requireLocal(w, r) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		writeErr(w, http.StatusMethodNotAllowed, "Нужен POST")
 		return
@@ -893,7 +898,9 @@ func revealInFileManager(path string) {
 	default:
 		cmd = exec.Command("xdg-open", filepath.Dir(path))
 	}
-	_ = cmd.Start()
+	// Тот же зомби, что и в browsers.go: кнопку «показать в папке» жмут
+	// после каждой загрузки, а сервер работает часами.
+	_ = startAndReap(cmd)
 }
 
 // writeErrCode — как writeErr, но с машинным кодом ошибки для интерфейса.

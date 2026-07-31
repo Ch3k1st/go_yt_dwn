@@ -576,6 +576,10 @@ const indexHTML = `<!DOCTYPE html>
            Остаются три действия вручную — открыть страницу расширений, включить
            «Режим разработчика» и указать папку. Страницу и папку программа откроет сама.</p>
       </div>
+      <!-- Живая область для диктора: только состояние связи и только когда оно
+           меняется. Держится вне #extbody, потому что тот перерисовывается
+           целиком, а живая область должна быть одним и тем же элементом. -->
+      <p class="sr" id="extlive" aria-live="polite"></p>
       <div id="extbody"></div>
     </section>
   </main>
@@ -707,8 +711,9 @@ var state = {
      последней подготовки к установке (шаги показываем, пока не ушли с раздела). */
   ext: { state: 'idle', data: null, error: '', installing: '', install: null, installError: '' },
   /* Очередь из расширения живёт на сервере, а не в этой вкладке: список
-     переживает перезагрузку окна, поэтому его только читаем. */
-  caps: { ok: false, jobs: [], connected: false }
+     переживает перезагрузку окна, поэтому его только читаем.
+     stale — последний ответ не пришёл, на экране снимок «как было». */
+  caps: { ok: false, jobs: [], stale: false }
 };
 var streams = {};       // id задачи -> EventSource
 var tpoll = null;       // таймер опроса прогресса транскрибации
@@ -1107,6 +1112,11 @@ function renderQueue() {
   var host = $('qbody');
   var badge = $('qcount');
   var caps = visibleCaps();
+  /* Подпись того, что сейчас окажется на экране. Обновляем её здесь, а не
+     только в опросе: перерисовку запускают и другие места (скрытие
+     завершённых, отмена), иначе следующий опрос перерисовал бы всё заново
+     из-за расхождения подписи. */
+  capSig = capsSignature();
   var active = state.queue.filter(function (t) {
     return t.state === 'queued' || t.state === 'running';
   }).length + caps.filter(capBusy).length;
@@ -1287,25 +1297,60 @@ function capDelay() {
   return state.section === 'queue' ? 3000 : 8000;
 }
 
+/* Подпись видимого состояния задач расширения. Опрос идёт постоянно, а
+   renderQueue() собирает весь раздел заново: без этой проверки каждые три
+   секунды у пользователя улетал бы фокус с кнопки и сбрасывалось выделение
+   текста — причём у всех, даже у тех, кто расширение не ставил. Тот же приём,
+   что extSig в разделе «Расширение». */
+var capSig = '';
+function capsSignature() {
+  return (state.caps.stale ? 'stale' : 'live') + '#' +
+    visibleCaps().map(function (j) {
+      return [j.id, j.state, j.percent | 0, j.speed || '', j.eta || '',
+        j.file || '', j.error || ''].join('~');
+    }).join(';');
+}
+function renderQueueIfCapsChanged() {
+  if (capsSignature() === capSig) { return; }
+  renderQueue();
+}
+
+/* Опрос перезапускают из нескольких мест сразу (смена раздела, возврат в окно,
+   отмена задачи). Без метки поколения два запроса завели бы каждый свой таймер,
+   и частота опроса удваивалась бы с каждым таким совпадением. */
+var capGen = 0;
+/* Интерфейс открыт не с этой машины — служебные ручки отвечают 403 всегда.
+   Ходить за ними каждые 15 секунд до закрытия окна незачем. */
+var capForbidden = false;
+
 function loadCaps() {
+  if (capForbidden) { return; }
   if (capTimer) { clearTimeout(capTimer); capTimer = null; }
+  var gen = ++capGen;
   fetch('/api/capture/jobs').then(function (r) {
+    if (r.status === 403) { capForbidden = true; }
     if (!r.ok) { throw new Error('HTTP ' + r.status); }
     return r.json();
   }).then(function (d) {
+    if (gen !== capGen) { return; }   /* нас обогнал более свежий запрос */
     state.caps.ok = true;
+    state.caps.stale = false;
     state.caps.jobs = d.jobs || [];
-    state.caps.connected = !!d.connected;
     pruneHidden(state.caps.jobs);
-    renderQueue();
+    renderQueueIfCapsChanged();
     capTimer = setTimeout(loadCaps, capDelay());
   }).catch(function () {
+    if (gen !== capGen) { return; }
     /* Ручки нет (старая сборка) или интерфейс открыт не с этой машины —
        тогда секции просто нет. Баннером не мешаем: пользователь этой очереди
-       не заводил и чинить ему нечего. */
+       не заводил и чинить ему нечего.
+       Список при этом не стираем: один сбойный опрос — не повод убирать
+       с экрана идущую загрузку. Держим последний снимок и помечаем его
+       устаревшим, пока связь не вернётся. */
     state.caps.ok = false;
-    state.caps.jobs = [];
-    renderQueue();
+    state.caps.stale = state.caps.jobs.length > 0;
+    renderQueueIfCapsChanged();
+    if (capForbidden) { return; }
     capTimer = setTimeout(loadCaps, capDelay());
   });
 }
@@ -1337,6 +1382,14 @@ function renderCaptureSection(host) {
   var head = el('div', 'subhead');
   head.appendChild(icon('i-ext', 14));
   head.appendChild(el('span', null, 'Поймано расширением'));
+  /* Связь с движком пропала. Список не стираем — он последний известный,
+     но врать про «скачивается прямо сейчас» тоже нельзя. */
+  if (state.caps.stale) {
+    var st = el('span', 'chip', 'нет связи');
+    st.style.marginLeft = '8px';
+    st.title = 'Движок не ответил на последний опрос — показано последнее известное состояние';
+    head.appendChild(st);
+  }
   host.appendChild(head);
 
   var list = el('div', 'list');
@@ -1431,7 +1484,15 @@ function hostOf(raw) {
   if (!raw) { return ''; }
   var m = String(raw).match(/^[a-z]+:\/\/([^/?#]+)/i);
   if (!m) { return ''; }
-  return m[1].replace(/^www\./i, '');
+  var host = m[1];
+  /* Всё до последнего @ — это логин с паролем, а не адрес. В ссылке вида
+     https://youtube.com@evil.example/ настоящий сайт стоит справа: без
+     обрезки подпись «со страницы …» назвала бы чужой сайт знакомым именем
+     (а при обрезке по ширине — просто «youtube.com»), заодно вынеся пароль
+     из адреса на экран. */
+  var at = host.lastIndexOf('@');
+  if (at >= 0) { host = host.slice(at + 1); }
+  return host.replace(/^www\./i, '');
 }
 
 /* ============================== История =============================== */
@@ -2116,6 +2177,7 @@ function loadExtStatus() {
   }).then(function (d) {
     state.ext.state = 'ready';
     state.ext.data = d;
+    announceExt(extStateText(d));
     var sig = [d.ready, d.connected, d.mismatch, (d.browsers || []).length,
       d.extVersion, d.port].join('|');
     if (sig !== extSig) { extSig = sig; renderExt(); } else { updateExtPing(); }
@@ -2123,23 +2185,35 @@ function loadExtStatus() {
     state.ext.state = 'error';
     state.ext.error = 'Движок не ответил. Возможно, интерфейс открыт не с этого ' +
       'компьютера — служебные ручки отвечают только на 127.0.0.1.';
+    announceExt('Состояние расширения недоступно');
     extSig = '';
     renderExt();
   });
 }
+
+/* Распаковка и запуск браузера занимают доли секунды. Если ответа нет минуту —
+   что-то пошло не так на стороне системы, и кнопка не должна остаться в
+   «Готовлю...» навсегда: человеку нужно понять, что можно нажать ещё раз. */
+var EXT_INSTALL_TIMEOUT_MS = 60000;
 
 function installExt(browserId) {
   state.ext.installing = browserId || '*';
   state.ext.installError = '';
   extSig = '';
   renderExt();
+  var ctrl = window.AbortController ? new AbortController() : null;
+  var giveUp = setTimeout(function () {
+    if (ctrl) { ctrl.abort(); }
+  }, EXT_INSTALL_TIMEOUT_MS);
   fetch('/api/extension/install', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ browser: browserId || '', openPage: true, openFolder: true })
+    body: JSON.stringify({ browser: browserId || '', openPage: true, openFolder: true }),
+    signal: ctrl ? ctrl.signal : undefined
   }).then(function (r) {
     return r.json().then(function (d) { return { ok: r.ok, d: d }; });
   }).then(function (res) {
+    clearTimeout(giveUp);
     state.ext.installing = '';
     if (!res.ok) {
       state.ext.installError = res.d.error || 'Программа не смогла подготовить папку расширения.';
@@ -2158,12 +2232,31 @@ function installExt(browserId) {
       head.focus();
       head.scrollIntoView({ block: 'nearest' });
     }
-  }).catch(function () {
+  }).catch(function (e) {
+    clearTimeout(giveUp);
     state.ext.installing = '';
-    state.ext.installError = 'Нет связи с движком программы. Проверьте, что приложение не закрыто.';
+    state.ext.installError = (e && e.name === 'AbortError')
+      ? 'Программа не ответила за минуту. Проверьте, не ждёт ли браузер или ' +
+        'файловый менеджер ответа в другом окне, и попробуйте ещё раз.'
+      : 'Нет связи с движком программы. Проверьте, что приложение не закрыто.';
     extSig = '';
     renderExt();
   });
+}
+
+/* Экранному диктору важно одно: связь появилась или пропала. Текст меняется
+   редко, поэтому объявление не превращается в шум. Секунды сюда не попадают. */
+var extLiveSaid = '';
+function announceExt(text) {
+  if (text === extLiveSaid) { return; }
+  extLiveSaid = text;
+  var n = $('extlive');
+  if (n) { n.textContent = text; }
+}
+function extStateText(d) {
+  if (d.connected) { return 'Расширение на связи'; }
+  return d.ready ? 'Расширение распаковано, но браузер ещё не отзывался'
+                 : 'Расширение не установлено';
 }
 
 function fmtAgo(sec) {
@@ -2242,6 +2335,10 @@ function buildExt(host) {
     em.appendChild(again);
     errCard.appendChild(em);
     host.appendChild(errCard);
+    /* Инструкция нужна именно сейчас: связи с движком нет, и человек ставит
+       расширение руками — по шагам, пути к папке и адресу отсюда. Убирать её
+       вместе с состоянием было бы ровно наоборот. */
+    if (s.install) { host.appendChild(extStepsCard(s.install)); }
     return;
   }
 
@@ -2279,8 +2376,9 @@ function extStatusCard(d) {
   var line = el('div', 'hint', extPingText(d));
   line.id = 'extping';
   line.style.marginTop = '4px';
-  /* Строка обновляется опросом сама: экранный диктор должен об этом узнать. */
-  line.setAttribute('aria-live', 'polite');
+  /* Живой областью эта строка быть не может: в ней тикают секунды с последнего
+     сигнала, и диктор читал бы «4 с назад… 7 с назад…» без остановки. Диктору
+     говорим только о смене состояния связи — через #extlive, см. announceExt. */
   txt.appendChild(line);
   row.appendChild(txt);
 
@@ -2414,14 +2512,18 @@ function extStepsCard(r) {
     card.appendChild(pathRow(r.extPage, 'Адрес страницы расширений', null, null, null));
   }
 
+  /* pageLaunched === false — браузер не удалось даже запустить (не тот путь,
+     нет прав). Это единственное, что программа знает наверняка: открылась ли
+     вкладка, ей не сообщает никто, поэтому в остальных случаях показывается
+     осторожная подсказка r.note. */
   var notes = [];
-  if (r.extPage && r.pageOpened === false) {
-    notes.push('Браузер не открыл страницу расширений сам — скопируйте адрес выше ' +
-      'и вставьте его в адресную строку.');
+  if (r.extPage && r.pageLaunched === false) {
+    notes.push('Браузер не запустился — откройте его сами и вставьте адрес выше ' +
+      'в адресную строку.');
   } else if (r.note) {
     notes.push(r.note);
   }
-  if (r.dir && r.folderOpened === false) {
+  if (r.dir && r.folderLaunched === false) {
     notes.push('Окно с папкой тоже не открылось — путь выше можно скопировать и вставить ' +
       'в диалог выбора папки.');
   }

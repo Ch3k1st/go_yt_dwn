@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
@@ -457,11 +458,9 @@ func sse(w http.ResponseWriter, f http.Flusher, event, data string) {
 	f.Flush()
 }
 
-// localRequest защищает служебные ручки от DNS-rebinding: браузер подставит в Host
-// имя сайта, а не 127.0.0.1, и запрос будет отклонён.
-func localRequest(r *http.Request) bool {
-	host := r.Host
-	if h, _, err := net.SplitHostPort(r.Host); err == nil {
+// loopbackHost — это адрес самой машины (с портом или без, IPv6 в скобках).
+func loopbackHost(host string) bool {
+	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	}
 	host = strings.Trim(host, "[]")
@@ -472,10 +471,46 @@ func localRequest(r *http.Request) bool {
 	return false
 }
 
+// localRequest защищает служебные ручки от DNS-rebinding: браузер подставит в Host
+// имя сайта, а не 127.0.0.1, и запрос будет отклонён.
+func localRequest(r *http.Request) bool {
+	return loopbackHost(r.Host)
+}
+
+// sameOriginRequest отсекает запросы, отправленные со страницы чужого сайта.
+//
+// Почему одного Host мало. Браузер разрешает кросс-сайтовый POST без
+// предварительного OPTIONS («простой запрос»): достаточно тела с типом
+// text/plain. Такой запрос уходит на 127.0.0.1 сразу, и Host в нём — наш,
+// то есть localRequest его пропускает. Ответ чужая страница не прочитает
+// (CORS-заголовков мы не даём), но побочное действие уже случится: папка
+// расширения перераспакуется, запустится браузер, отменится чужая загрузка.
+//
+// Origin в такой запрос браузер проставляет сам, и подделать его со страницы
+// нельзя — поэтому именно он и есть признак «пришло с сайта». Заголовка нет
+// (curl, наша нативная оболочка, обычный переход по ссылке) — пропускаем:
+// у неброузерного клиента и так есть доступ ко всей машине.
+func sameOriginRequest(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	u, err := url.Parse(origin)
+	// Origin: null (песочница, file://) сюда же — схема пустая, значит не наш.
+	if err != nil || u.Scheme != "http" {
+		return false
+	}
+	return loopbackHost(u.Host)
+}
+
 // requireLocal — общий вход для ручек, которые не должен видеть ни один сайт.
 func requireLocal(w http.ResponseWriter, r *http.Request) bool {
 	if !localRequest(r) {
 		writeErr(w, http.StatusForbidden, "Доступ только с локального адреса")
+		return false
+	}
+	if !sameOriginRequest(r) {
+		writeErr(w, http.StatusForbidden, "Запрос пришёл со стороннего сайта")
 		return false
 	}
 	return true

@@ -270,7 +270,7 @@ func launchBrowser(b installedBrowser, url string) error {
 			cmd = exec.Command(b.Path, url)
 		}
 	}
-	return cmd.Start()
+	return startAndReap(cmd)
 }
 
 // openFolder показывает папку в файловом менеджере.
@@ -284,5 +284,17 @@ func openFolder(dir string) error {
 	default:
 		cmd = exec.Command("xdg-open", dir)
 	}
-	return cmd.Start()
+	return startAndReap(cmd)
+}
+
+// startAndReap запускает процесс и не ждёт его завершения, но и не бросает.
+// Без Wait() завершившийся потомок остаётся зомби в таблице процессов до
+// выхода программы, а сервер живёт часами и кнопку «Установить» жмут не раз.
+// Ждём в отдельной горутине: она нужна только чтобы забрать код возврата.
+func startAndReap(cmd *exec.Cmd) error {
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	go func() { _ = cmd.Wait() }()
+	return nil
 }
